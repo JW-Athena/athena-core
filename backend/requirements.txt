@@ -11,3 +11,6 @@ python-docx
 openpyxl
 pandas
 pillow
+pdf2image
+pytesseract
+pymupdf

@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+
+temp_*
+temp_page_*
+
+.venv/
+.env
+
+.vscode/
