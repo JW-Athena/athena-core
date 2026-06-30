@@ -1,38 +1,41 @@
-from fastapi import FastAPI, UploadFile, File
-from reader import AthenaReader
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from capability_004_routes import router as capability_004_router
+
 
 app = FastAPI(
-    title="Athena Core API",
-    version="0.1"
+    title="ATHENA Backend",
+    description="ATHENA Business Operating System",
+    version="0.0.4",
 )
 
-reader = AthenaReader()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.get("/")
 def root():
-
     return {
-        "status": "Athena is alive"
+        "system": "ATHENA",
+        "status": "online",
+        "version": "0.0.4",
+        "active_capability": "004 - Executive Information Extraction",
     }
 
 
-@app.post("/upload")
-async def upload_document(
-    file: UploadFile = File(...)
-):
-
-    contents = await file.read()
-
-    temp_file = f"temp_{file.filename}"
-
-    with open(temp_file, "wb") as f:
-        f.write(contents)
-
-    text = reader.read(temp_file)
-
+@app.get("/health")
+def health():
     return {
-        "filename": file.filename,
-        "characters": len(text),
-        "preview": text[:1000]
+        "status": "healthy",
+        "backend": "running",
+        "capability_004": "ready",
     }
+
+
+app.include_router(capability_004_router)
