@@ -18,12 +18,13 @@ from engine_009_routes import router as engine_009_router
 from developer_dashboard import router as developer_dashboard_router
 from document_intelligence_routes import router as document_intelligence_router
 from entity_intelligence_routes import router as entity_intelligence_router
+from entity_database_routes import router as entity_database_router
 
 
 app = FastAPI(
     title="ATHENA Backend",
     description="ATHENA Business Operating System",
-    version="0.1.2",
+    version="0.1.3",
 )
 
 app.add_middleware(
@@ -40,7 +41,7 @@ def root():
     return {
         "system": "ATHENA",
         "status": "online",
-        "version": "0.1.2",
+        "version": "0.1.3",
         "control_center": "http://127.0.0.1:8000/control",
         "openai_key_loaded": bool(os.getenv("OPENAI_API_KEY")),
     }
@@ -63,6 +64,7 @@ def health():
         "engine_009": "ready",
         "document_intelligence": "ready",
         "entity_intelligence": "ready",
+        "entity_database": "ready",
         "control_center": "ready",
     }
 
@@ -76,3 +78,4 @@ app.include_router(engine_009_router)
 app.include_router(developer_dashboard_router)
 app.include_router(document_intelligence_router)
 app.include_router(entity_intelligence_router)
+app.include_router(entity_database_router)
