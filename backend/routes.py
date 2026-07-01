@@ -15,6 +15,7 @@ from entity_intelligence_routes import router as entity_intelligence_router
 from entity_database_routes import router as entity_database_router
 
 from product_profile_routes import router as product_profile_router
+from supplier_profile_routes import router as supplier_profile_router
 from tender_profile_routes import router as tender_profile_router
 from tender_index_routes import router as tender_index_router
 from tender_comparison_routes import router as tender_comparison_router
@@ -44,6 +45,7 @@ def register_routes(app: FastAPI):
     app.include_router(entity_database_router)
 
     app.include_router(product_profile_router)
+    app.include_router(supplier_profile_router)
     app.include_router(tender_profile_router)
     app.include_router(tender_index_router)
     app.include_router(tender_comparison_router)
