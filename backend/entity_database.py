@@ -255,24 +255,11 @@ class EntityDatabase:
 
             rows = cursor.fetchall()
 
-        return [
-            {
-                "id": row[0],
-                "entity_type": row[1],
-                "value": row[2],
-                "normalized_type": row[3],
-                "normalized_value": row[4],
-                "category": row[5],
-                "source_filename": row[6],
-                "source_document_type": row[7],
-                "source_line": row[8],
-                "created_at": row[9],
-            }
-            for row in rows
-        ]
+        return [self._row_to_entity(row) for row in rows]
 
     def search_entities(self, query: str, limit: int = 50) -> List[Dict]:
-        search = f"%{query}%"
+        exact = query.strip()
+        like = f"%{exact}%"
 
         with self._connect() as conn:
             cursor = conn.cursor()
@@ -280,38 +267,60 @@ class EntityDatabase:
             cursor.execute(
                 """
                 SELECT id, entity_type, value, normalized_type, normalized_value,
-                       category, source_filename, source_document_type, source_line, created_at
+                       category, source_filename, source_document_type, source_line, created_at,
+                       CASE
+                           WHEN lower(normalized_value) = lower(?) THEN 100
+                           WHEN lower(value) = lower(?) THEN 90
+                           WHEN lower(normalized_value) LIKE lower(?) THEN 80
+                           WHEN lower(value) LIKE lower(?) THEN 70
+                           WHEN lower(entity_type) LIKE lower(?) THEN 50
+                           WHEN lower(category) LIKE lower(?) THEN 40
+                           WHEN lower(source_filename) LIKE lower(?) THEN 30
+                           WHEN lower(source_line) LIKE lower(?) THEN 10
+                           ELSE 0
+                       END AS relevance_score
                 FROM entities
-                WHERE entity_type LIKE ?
-                   OR value LIKE ?
-                   OR normalized_type LIKE ?
-                   OR normalized_value LIKE ?
-                   OR category LIKE ?
-                   OR source_filename LIKE ?
-                   OR source_line LIKE ?
-                ORDER BY id DESC
+                WHERE lower(normalized_value) = lower(?)
+                   OR lower(value) = lower(?)
+                   OR lower(normalized_value) LIKE lower(?)
+                   OR lower(value) LIKE lower(?)
+                   OR lower(entity_type) LIKE lower(?)
+                   OR lower(category) LIKE lower(?)
+                   OR lower(source_filename) LIKE lower(?)
+                   OR lower(source_line) LIKE lower(?)
+                ORDER BY relevance_score DESC, id DESC
                 LIMIT ?
                 """,
-                (search, search, search, search, search, search, search, limit),
+                (
+                    exact,
+                    exact,
+                    like,
+                    like,
+                    like,
+                    like,
+                    like,
+                    like,
+                    exact,
+                    exact,
+                    like,
+                    like,
+                    like,
+                    like,
+                    like,
+                    like,
+                    limit,
+                ),
             )
 
             rows = cursor.fetchall()
 
-        return [
-            {
-                "id": row[0],
-                "entity_type": row[1],
-                "value": row[2],
-                "normalized_type": row[3],
-                "normalized_value": row[4],
-                "category": row[5],
-                "source_filename": row[6],
-                "source_document_type": row[7],
-                "source_line": row[8],
-                "created_at": row[9],
-            }
-            for row in rows
-        ]
+        results = []
+        for row in rows:
+            item = self._row_to_entity(row[:10])
+            item["relevance_score"] = row[10]
+            results.append(item)
+
+        return results
 
     def list_relationships(self, limit: int = 50) -> List[Dict]:
         with self._connect() as conn:
@@ -340,3 +349,17 @@ class EntityDatabase:
             }
             for row in rows
         ]
+
+    def _row_to_entity(self, row) -> Dict:
+        return {
+            "id": row[0],
+            "entity_type": row[1],
+            "value": row[2],
+            "normalized_type": row[3],
+            "normalized_value": row[4],
+            "category": row[5],
+            "source_filename": row[6],
+            "source_document_type": row[7],
+            "source_line": row[8],
+            "created_at": row[9],
+        }
