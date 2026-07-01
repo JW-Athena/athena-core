@@ -14,6 +14,17 @@ entity_engine = EntityIntelligenceEngine()
 entity_database = EntityDatabase()
 
 
+@router.post("/reset")
+async def reset_entity_database():
+    result = entity_database.reset()
+
+    return {
+        "engine": "entity_database",
+        "status": "success",
+        "result": result,
+    }
+
+
 @router.post("/save")
 async def save_entities_from_document(
     file: UploadFile = File(...),

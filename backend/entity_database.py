@@ -58,19 +58,19 @@ class EntityDatabase:
                 """
             )
 
-            columns = self._get_columns(cursor, "entities")
-
-            if "normalized_type" not in columns:
-                cursor.execute("ALTER TABLE entities ADD COLUMN normalized_type TEXT")
-
-            if "normalized_value" not in columns:
-                cursor.execute("ALTER TABLE entities ADD COLUMN normalized_value TEXT")
-
             conn.commit()
 
-    def _get_columns(self, cursor, table_name: str) -> List[str]:
-        cursor.execute(f"PRAGMA table_info({table_name})")
-        return [row[1] for row in cursor.fetchall()]
+    def reset(self) -> Dict:
+        with self._connect() as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM entities")
+            cursor.execute("DELETE FROM relationships")
+            conn.commit()
+
+        return {
+            "reset": True,
+            "message": "Entity database cleared",
+        }
 
     def save_extraction(
         self,
@@ -81,12 +81,10 @@ class EntityDatabase:
         entities_saved = []
         relationships_saved = []
 
-        entities = extraction.get("entities", {})
-
-        for group_name, group_items in entities.items():
+        for group_items in extraction.get("entities", {}).values():
             for item in group_items:
                 saved = self.save_entity(
-                    entity_type=item.get("type") or group_name,
+                    entity_type=item.get("type", ""),
                     value=item.get("value", ""),
                     category=item.get("category"),
                     source_filename=filename,
