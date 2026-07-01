@@ -4,10 +4,13 @@ import sqlite3
 from datetime import datetime
 from typing import Dict, List, Optional
 
+from entity_normalizer import EntityNormalizer
+
 
 class EntityDatabase:
     def __init__(self, database_path: str = "database/athena_entities.db"):
         self.database_path = database_path
+        self.normalizer = EntityNormalizer()
         self._ensure_database_folder()
         self._create_tables()
 
@@ -29,6 +32,8 @@ class EntityDatabase:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     entity_type TEXT NOT NULL,
                     value TEXT NOT NULL,
+                    normalized_type TEXT,
+                    normalized_value TEXT,
                     category TEXT,
                     source_filename TEXT,
                     source_document_type TEXT,
@@ -53,7 +58,19 @@ class EntityDatabase:
                 """
             )
 
+            columns = self._get_columns(cursor, "entities")
+
+            if "normalized_type" not in columns:
+                cursor.execute("ALTER TABLE entities ADD COLUMN normalized_type TEXT")
+
+            if "normalized_value" not in columns:
+                cursor.execute("ALTER TABLE entities ADD COLUMN normalized_value TEXT")
+
             conn.commit()
+
+    def _get_columns(self, cursor, table_name: str) -> List[str]:
+        cursor.execute(f"PRAGMA table_info({table_name})")
+        return [row[1] for row in cursor.fetchall()]
 
     def save_extraction(
         self,
@@ -116,6 +133,12 @@ class EntityDatabase:
                 "reason": "Empty entity value",
             }
 
+        normalized = self.normalizer.normalize_entity(
+            entity_type=entity_type,
+            value=value,
+            category=category,
+        )
+
         created_at = datetime.utcnow().isoformat()
 
         with self._connect() as conn:
@@ -126,6 +149,8 @@ class EntityDatabase:
                 INSERT INTO entities (
                     entity_type,
                     value,
+                    normalized_type,
+                    normalized_value,
                     category,
                     source_filename,
                     source_document_type,
@@ -133,16 +158,24 @@ class EntityDatabase:
                     metadata_json,
                     created_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     entity_type,
                     value,
+                    normalized.get("normalized_type"),
+                    normalized.get("normalized_value"),
                     category,
                     source_filename,
                     source_document_type,
                     source_line,
-                    json.dumps(metadata or {}, ensure_ascii=False),
+                    json.dumps(
+                        {
+                            "raw_metadata": metadata or {},
+                            "normalization": normalized,
+                        },
+                        ensure_ascii=False,
+                    ),
                     created_at,
                 ),
             )
@@ -155,7 +188,10 @@ class EntityDatabase:
             "entity_id": entity_id,
             "entity_type": entity_type,
             "value": value,
+            "normalized_type": normalized.get("normalized_type"),
+            "normalized_value": normalized.get("normalized_value"),
             "category": category,
+            "details": normalized.get("details", {}),
         }
 
     def save_relationship(
@@ -210,7 +246,8 @@ class EntityDatabase:
 
             cursor.execute(
                 """
-                SELECT id, entity_type, value, category, source_filename, source_document_type, source_line, created_at
+                SELECT id, entity_type, value, normalized_type, normalized_value,
+                       category, source_filename, source_document_type, source_line, created_at
                 FROM entities
                 ORDER BY id DESC
                 LIMIT ?
@@ -225,11 +262,13 @@ class EntityDatabase:
                 "id": row[0],
                 "entity_type": row[1],
                 "value": row[2],
-                "category": row[3],
-                "source_filename": row[4],
-                "source_document_type": row[5],
-                "source_line": row[6],
-                "created_at": row[7],
+                "normalized_type": row[3],
+                "normalized_value": row[4],
+                "category": row[5],
+                "source_filename": row[6],
+                "source_document_type": row[7],
+                "source_line": row[8],
+                "created_at": row[9],
             }
             for row in rows
         ]
@@ -242,17 +281,20 @@ class EntityDatabase:
 
             cursor.execute(
                 """
-                SELECT id, entity_type, value, category, source_filename, source_document_type, source_line, created_at
+                SELECT id, entity_type, value, normalized_type, normalized_value,
+                       category, source_filename, source_document_type, source_line, created_at
                 FROM entities
                 WHERE entity_type LIKE ?
                    OR value LIKE ?
+                   OR normalized_type LIKE ?
+                   OR normalized_value LIKE ?
                    OR category LIKE ?
                    OR source_filename LIKE ?
                    OR source_line LIKE ?
                 ORDER BY id DESC
                 LIMIT ?
                 """,
-                (search, search, search, search, search, limit),
+                (search, search, search, search, search, search, search, limit),
             )
 
             rows = cursor.fetchall()
@@ -262,11 +304,13 @@ class EntityDatabase:
                 "id": row[0],
                 "entity_type": row[1],
                 "value": row[2],
-                "category": row[3],
-                "source_filename": row[4],
-                "source_document_type": row[5],
-                "source_line": row[6],
-                "created_at": row[7],
+                "normalized_type": row[3],
+                "normalized_value": row[4],
+                "category": row[5],
+                "source_filename": row[6],
+                "source_document_type": row[7],
+                "source_line": row[8],
+                "created_at": row[9],
             }
             for row in rows
         ]

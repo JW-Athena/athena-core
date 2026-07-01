@@ -1,3 +1,16 @@
+from pathlib import Path
+
+BASE_DIR = Path(__file__).resolve().parent
+
+
+def write_file(relative_path: str, content: str) -> None:
+    path = BASE_DIR / relative_path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content.strip() + "\n", encoding="utf-8")
+    print(f"Updated: {path}")
+
+
+ENTITY_INTELLIGENCE_ENGINE = r'''
 import re
 from typing import Dict, List, Optional
 
@@ -464,3 +477,13 @@ class EntityIntelligenceEngine:
                 result.append(item)
 
         return result
+'''
+
+
+def main():
+    write_file("entity_intelligence_engine.py", ENTITY_INTELLIGENCE_ENGINE)
+    print("Done.")
+
+
+if __name__ == "__main__":
+    main()
