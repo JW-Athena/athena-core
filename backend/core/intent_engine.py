@@ -3,14 +3,15 @@ class IntentEngine:
     Intent Engine
 
     Detects what kind of business question the user is asking.
-    Later this will become AI-powered, but for now we keep it
-    simple and reliable.
     """
 
     def detect(self, question: str) -> dict:
         text = question.lower()
 
-        if any(word in text for word in ["risk", "danger", "problem", "penalty", "liability"]):
+        if any(phrase in text for phrase in ["tell me about", "profile of", "product profile"]):
+            intent = "product_profile_question"
+
+        elif any(word in text for word in ["risk", "danger", "problem", "penalty", "liability"]):
             intent = "risk_analysis"
 
         elif any(word in text for word in ["warranty", "guarantee", "defect", "replacement"]):
