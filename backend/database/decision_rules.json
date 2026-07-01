@@ -1,0 +1,44 @@
+[
+    {
+        "id": 1,
+        "name": "Products Identified",
+        "weight": 20,
+        "condition": "products"
+    },
+    {
+        "id": 2,
+        "name": "Warranty Available",
+        "weight": 20,
+        "condition": "warranty"
+    },
+    {
+        "id": 3,
+        "name": "Payment Terms",
+        "weight": 15,
+        "condition": "payment"
+    },
+    {
+        "id": 4,
+        "name": "Delivery Terms",
+        "weight": 15,
+        "condition": "delivery"
+    },
+    {
+        "id": 5,
+        "name": "Certificates",
+        "weight": 15,
+        "condition": "certificates"
+    },
+    {
+        "id": 6,
+        "name": "Location",
+        "weight": 5,
+        "condition": "location"
+    },
+    {
+        "id": 7,
+        "name": "Penalty",
+        "weight": -10,
+        "condition": "penalty"
+    }
+]
