@@ -14,12 +14,13 @@ from capability_005_routes import router as capability_005_router
 from capability_006_routes import router as capability_006_router
 from capability_007_routes import router as capability_007_router
 from engine_008_routes import router as engine_008_router
+from engine_009_routes import router as engine_009_router
 
 
 app = FastAPI(
     title="ATHENA Backend",
     description="ATHENA Business Operating System",
-    version="0.0.8",
+    version="0.0.9",
 )
 
 app.add_middleware(
@@ -36,8 +37,8 @@ def root():
     return {
         "system": "ATHENA",
         "status": "online",
-        "version": "0.0.8",
-        "active_engine": "008 - Semantic Memory Engine",
+        "version": "0.0.9",
+        "active_engine": "009 - RAG Answer Engine",
         "openai_key_loaded": bool(os.getenv("OPENAI_API_KEY")),
     }
 
@@ -56,6 +57,7 @@ def health():
         "capability_006": "ready",
         "capability_007": "ready",
         "engine_008": "ready",
+        "engine_009": "ready",
     }
 
 
@@ -64,3 +66,4 @@ app.include_router(capability_005_router)
 app.include_router(capability_006_router)
 app.include_router(capability_007_router)
 app.include_router(engine_008_router)
+app.include_router(engine_009_router)
