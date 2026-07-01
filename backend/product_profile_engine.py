@@ -1,3 +1,4 @@
+import re
 from typing import Dict, List
 
 from entity_database import EntityDatabase
@@ -50,9 +51,14 @@ class ProductProfileEngine:
             normalized_value = entity.get("normalized_value")
             value = entity.get("value")
             category = entity.get("category")
+            source_line = entity.get("source_line") or ""
 
             if entity_type == "product":
                 profile["category"] = category or profile["category"]
+
+                quantity = self._extract_quantity(source_line)
+                if quantity:
+                    self._append_unique(profile["quantities"], quantity)
 
             elif entity_type == "delivery_term":
                 self._append_unique(profile["delivery_terms"], normalized_value or value)
@@ -75,6 +81,12 @@ class ProductProfileEngine:
             "source_document_count": len(source_documents),
             "document_entity_count": len(document_entities),
         }
+
+    def _extract_quantity(self, text: str):
+        match = re.search(r"\b\d{2,}\b", text)
+        if match:
+            return int(match.group(0))
+        return None
 
     def _append_unique(self, target: List, value):
         if value and value not in target:
