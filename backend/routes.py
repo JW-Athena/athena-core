@@ -18,7 +18,9 @@ from product_profile_routes import router as product_profile_router
 from tender_profile_routes import router as tender_profile_router
 from tender_index_routes import router as tender_index_router
 from tender_comparison_routes import router as tender_comparison_router
+
 from executive_decision_routes import router as executive_decision_router
+from business_memory_routes import router as business_memory_router
 
 from dashboard_routes import router as dashboard_router
 
@@ -43,6 +45,8 @@ def register_routes(app: FastAPI):
     app.include_router(tender_profile_router)
     app.include_router(tender_index_router)
     app.include_router(tender_comparison_router)
+
     app.include_router(executive_decision_router)
+    app.include_router(business_memory_router)
 
     app.include_router(dashboard_router)
