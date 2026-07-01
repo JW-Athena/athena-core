@@ -1,0 +1,46 @@
+from fastapi import FastAPI
+
+from capability_004_routes import router as capability_004_router
+from capability_005_routes import router as capability_005_router
+from capability_006_routes import router as capability_006_router
+from capability_007_routes import router as capability_007_router
+
+from engine_008_routes import router as engine_008_router
+from engine_009_routes import router as engine_009_router
+
+from developer_dashboard import router as developer_dashboard_router
+
+from document_intelligence_routes import router as document_intelligence_router
+from entity_intelligence_routes import router as entity_intelligence_router
+from entity_database_routes import router as entity_database_router
+
+from product_profile_routes import router as product_profile_router
+from tender_profile_routes import router as tender_profile_router
+from tender_index_routes import router as tender_index_router
+from tender_comparison_routes import router as tender_comparison_router
+
+from dashboard_routes import router as dashboard_router
+
+
+def register_routes(app: FastAPI):
+
+    app.include_router(capability_004_router)
+    app.include_router(capability_005_router)
+    app.include_router(capability_006_router)
+    app.include_router(capability_007_router)
+
+    app.include_router(engine_008_router)
+    app.include_router(engine_009_router)
+
+    app.include_router(developer_dashboard_router)
+
+    app.include_router(document_intelligence_router)
+    app.include_router(entity_intelligence_router)
+    app.include_router(entity_database_router)
+
+    app.include_router(product_profile_router)
+    app.include_router(tender_profile_router)
+    app.include_router(tender_index_router)
+    app.include_router(tender_comparison_router)
+
+    app.include_router(dashboard_router)
