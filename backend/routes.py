@@ -24,6 +24,7 @@ from executive_decision_routes import router as executive_decision_router
 from executive_decision_brief_routes import router as executive_decision_brief_router
 from bid_no_bid_routes import router as bid_no_bid_router
 from risk_register_routes import router as risk_register_router
+from commercial_exposure_routes import router as commercial_exposure_router
 from business_memory_routes import router as business_memory_router
 
 from module_registry_routes import router as module_registry_router
@@ -57,6 +58,7 @@ def register_routes(app: FastAPI):
     app.include_router(executive_decision_brief_router)
     app.include_router(bid_no_bid_router)
     app.include_router(risk_register_router)
+    app.include_router(commercial_exposure_router)
     app.include_router(business_memory_router)
 
     app.include_router(module_registry_router)
