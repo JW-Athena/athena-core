@@ -13,6 +13,7 @@ from executive_report_engine import ExecutiveReportEngine
 from executive_scenarios_engine import ExecutiveScenariosEngine
 from opportunity_scoring_engine import OpportunityScoringEngine
 from risk_register_engine import RiskRegisterEngine
+from athena_clarification_agent import AthenaClarificationAgent
 from athena_memory_agent import AthenaMemoryAgent
 from athena_planner import AthenaPlanner
 from athena_reasoning_agent import AthenaReasoningAgent
@@ -34,6 +35,7 @@ rag_engine = RAGAnswerEngine()
 planner = AthenaPlanner()
 memory_agent = AthenaMemoryAgent()
 reasoning_agent = AthenaReasoningAgent()
+clarification_agent = AthenaClarificationAgent()
 
 
 @router.post("/athena/analyze")
@@ -132,6 +134,11 @@ def _analyze_document(
         text=text,
         metadata=metadata,
     )
+    clarification = clarification_agent.evaluate(
+        plan=plan,
+        reasoning=reasoning,
+        question=question,
+    )
     workflow = plan.get("intent", "question_answering")
     engine_outputs = _run_workflow(
         workflow=workflow,
@@ -149,6 +156,7 @@ def _analyze_document(
         "document_type": document_type or "",
         "planning": _planning_with_memory(plan=plan, memory=memory),
         "reasoning": reasoning,
+        "clarification": clarification,
         "brain_summary": _brain_summary(
             workflow=workflow,
             document_type=document_type,
