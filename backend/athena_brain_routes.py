@@ -14,6 +14,7 @@ from executive_scenarios_engine import ExecutiveScenariosEngine
 from opportunity_scoring_engine import OpportunityScoringEngine
 from risk_register_engine import RiskRegisterEngine
 from agent_registry import agent_registry
+from capability_marketplace import capability_marketplace
 from organization_awareness import organization_awareness
 from organizational_knowledge_graph import organizational_knowledge_graph
 from timing_utils import new_request_context, timed_step
@@ -132,6 +133,8 @@ def _analyze_document(
     request_context: Dict[str, Any],
     metadata: Dict[str, Any],
 ) -> Dict[str, Any]:
+    request_context["capabilities"] = capability_marketplace.enabled_capabilities()
+
     plan = planner.plan(
         question=question,
         document_type=document_type,

@@ -421,6 +421,98 @@
         "type": "Operational Alert",
         "delivery": "Today"
       }
+    },
+    {
+      "id": "task:review-risk-item-and-define-mitigation-actions",
+      "type": "task",
+      "label": "Review risk item and define mitigation actions.",
+      "metadata": {
+        "priority": "Critical",
+        "status": "Pending",
+        "due": "Immediate"
+      }
+    },
+    {
+      "id": "task:assign-accountable-owners-and-deadlines-for-priority-actions",
+      "type": "task",
+      "label": "Assign accountable owners and deadlines for priority actions.",
+      "metadata": {
+        "priority": "High",
+        "status": "Pending",
+        "due": "3 Days"
+      }
+    },
+    {
+      "id": "task:close-missing-information-before-final-approval",
+      "type": "task",
+      "label": "Close missing information before final approval.",
+      "metadata": {
+        "priority": "High",
+        "status": "Pending",
+        "due": "3 Days"
+      }
+    },
+    {
+      "id": "task:close-missing-information-gaps",
+      "type": "task",
+      "label": "Close missing information gaps.",
+      "metadata": {
+        "priority": "High",
+        "status": "Pending",
+        "due": "3 Days"
+      }
+    },
+    {
+      "id": "task:review-payment-exposure",
+      "type": "task",
+      "label": "Review payment exposure.",
+      "metadata": {
+        "priority": "High",
+        "status": "Pending",
+        "due": "3 Days"
+      }
+    },
+    {
+      "id": "department:finance",
+      "type": "department",
+      "label": "Finance",
+      "metadata": {}
+    },
+    {
+      "id": "task:review-warranty-obligation",
+      "type": "task",
+      "label": "Review warranty obligation.",
+      "metadata": {
+        "priority": "High",
+        "status": "Pending",
+        "due": "3 Days"
+      }
+    },
+    {
+      "id": "notification:finance-action-required",
+      "type": "notification",
+      "label": "Finance action required.",
+      "metadata": {
+        "priority": "High",
+        "type": "Risk Alert",
+        "delivery": "Today"
+      }
+    },
+    {
+      "id": "notification:execution-readiness-requires-action",
+      "type": "notification",
+      "label": "Execution readiness requires action.",
+      "metadata": {
+        "priority": "High",
+        "type": "Operational Alert",
+        "delivery": "Today"
+      }
+    },
+    {
+      "id": "department:operations",
+      "type": "department",
+      "label": "Operations",
+      "metadata": {}
     }
   ],
   "edges": [
@@ -915,24 +1007,126 @@
       "target": "action:logout",
       "relationship": "document_requires_action",
       "metadata": {}
+    },
+    {
+      "source": "document:sample-tender-txt",
+      "target": "task:review-penalty-clause",
+      "relationship": "opportunity_requires_task",
+      "metadata": {}
+    },
+    {
+      "source": "document:sample-tender-txt",
+      "target": "task:review-risk-item-and-define-mitigation-actions",
+      "relationship": "opportunity_requires_task",
+      "metadata": {}
+    },
+    {
+      "source": "task:review-risk-item-and-define-mitigation-actions",
+      "target": "department:management",
+      "relationship": "task_assigned_to_department",
+      "metadata": {}
+    },
+    {
+      "source": "document:sample-tender-txt",
+      "target": "task:assign-accountable-owners-and-deadlines-for-priority-actions",
+      "relationship": "opportunity_requires_task",
+      "metadata": {}
+    },
+    {
+      "source": "task:assign-accountable-owners-and-deadlines-for-priority-actions",
+      "target": "department:management",
+      "relationship": "task_assigned_to_department",
+      "metadata": {}
+    },
+    {
+      "source": "document:sample-tender-txt",
+      "target": "task:close-missing-information-before-final-approval",
+      "relationship": "opportunity_requires_task",
+      "metadata": {}
+    },
+    {
+      "source": "task:close-missing-information-before-final-approval",
+      "target": "department:management",
+      "relationship": "task_assigned_to_department",
+      "metadata": {}
+    },
+    {
+      "source": "document:sample-tender-txt",
+      "target": "task:close-missing-information-gaps",
+      "relationship": "opportunity_requires_task",
+      "metadata": {}
+    },
+    {
+      "source": "task:close-missing-information-gaps",
+      "target": "department:management",
+      "relationship": "task_assigned_to_department",
+      "metadata": {}
+    },
+    {
+      "source": "document:sample-tender-txt",
+      "target": "task:review-payment-exposure",
+      "relationship": "opportunity_requires_task",
+      "metadata": {}
+    },
+    {
+      "source": "task:review-payment-exposure",
+      "target": "department:finance",
+      "relationship": "task_assigned_to_department",
+      "metadata": {}
+    },
+    {
+      "source": "document:sample-tender-txt",
+      "target": "task:review-warranty-obligation",
+      "relationship": "opportunity_requires_task",
+      "metadata": {}
+    },
+    {
+      "source": "task:review-warranty-obligation",
+      "target": "department:legal",
+      "relationship": "task_assigned_to_department",
+      "metadata": {}
+    },
+    {
+      "source": "document:sample-tender-txt",
+      "target": "notification:finance-action-required",
+      "relationship": "notification_sent_to_role",
+      "metadata": {}
+    },
+    {
+      "source": "notification:finance-action-required",
+      "target": "department:finance",
+      "relationship": "notification_sent_to_role",
+      "metadata": {}
+    },
+    {
+      "source": "document:sample-tender-txt",
+      "target": "notification:execution-readiness-requires-action",
+      "relationship": "notification_sent_to_role",
+      "metadata": {}
+    },
+    {
+      "source": "notification:execution-readiness-requires-action",
+      "target": "department:operations",
+      "relationship": "notification_sent_to_role",
+      "metadata": {}
     }
   ],
   "summary": {
-    "total_nodes": 46,
-    "total_edges": 82,
+    "total_nodes": 56,
+    "total_edges": 99,
     "node_types": {
       "document": 2,
       "decision": 1,
-      "task": 12,
-      "department": 5,
-      "notification": 8,
+      "task": 18,
+      "department": 7,
+      "notification": 10,
       "action": 18
     },
     "relationship_types": {
       "opportunity_has_decision": 2,
-      "opportunity_requires_task": 12,
-      "task_assigned_to_department": 12,
-      "notification_sent_to_role": 20,
+      "opportunity_requires_task": 19,
+      "task_assigned_to_department": 18,
+      "notification_sent_to_role": 24,
       "document_requires_action": 36
     }
   }

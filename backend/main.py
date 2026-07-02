@@ -15,6 +15,7 @@ load_dotenv(
 
 from routes import register_routes
 from athena_brain_routes import router as athena_brain_router
+from capability_marketplace_routes import router as capability_marketplace_router
 from organization_awareness_routes import router as organization_awareness_router
 from organizational_knowledge_graph_routes import router as organizational_knowledge_graph_router
 
@@ -61,6 +62,7 @@ def health():
 
 register_routes(app)
 app.include_router(athena_brain_router)
+app.include_router(capability_marketplace_router)
 app.include_router(organization_awareness_router)
 app.include_router(organizational_knowledge_graph_router)
 
