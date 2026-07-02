@@ -163,6 +163,71 @@ class AthenaMemoryAgent:
             "message": "Stored file understandings listed.",
         }
 
+    def search_file_understandings(self, query: str, limit: int = 20) -> Dict[str, Any]:
+        clean_query = str(query or "").strip()
+        if not clean_query:
+            return self._memory_store_failure(
+                reason="empty_query",
+                message="Search query is required.",
+            )
+
+        try:
+            safe_limit = int(limit)
+        except (TypeError, ValueError):
+            return self._memory_store_failure(
+                reason="invalid_limit",
+                message="Limit must be a number.",
+            )
+
+        if safe_limit < 1:
+            return self._memory_store_failure(
+                reason="invalid_limit",
+                message="Limit must be greater than zero.",
+            )
+
+        safe_limit = min(safe_limit, 100)
+        query_lower = clean_query.lower()
+
+        try:
+            memories = self.business_memory.recall(subject="")
+            records = []
+            for memory in memories:
+                if memory.get("memory_type") != "file_understanding":
+                    continue
+
+                metadata = memory.get("metadata", {}) or {}
+                record = {
+                    "type": "file_understanding",
+                    "source_path": memory.get("subject", ""),
+                    "source_name": memory.get("title", ""),
+                    "summary_text": memory.get("summary", ""),
+                    "confidence": metadata.get("confidence", "limited"),
+                }
+                searchable_text = " ".join(
+                    [
+                        record["source_name"],
+                        record["source_path"],
+                        record["summary_text"],
+                    ]
+                ).lower()
+                if query_lower in searchable_text:
+                    records.append(record)
+                if len(records) >= safe_limit:
+                    break
+        except Exception as exc:
+            return self._memory_store_failure(
+                reason="memory_search_error",
+                message=f"Failed to search stored file understandings: {exc}",
+            )
+
+        return {
+            "status": "success",
+            "query": clean_query,
+            "count": len(records),
+            "records": records,
+            "message": "Stored file understandings searched.",
+        }
+
     def _should_search(
         self,
         intent: str,

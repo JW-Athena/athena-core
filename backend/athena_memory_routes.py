@@ -91,3 +91,47 @@ async def list_file_understandings(limit: int = Query(default=20)):
     if status != "success":
         response["reason"] = result.get("reason", "memory_read_error")
     return response
+
+
+@router.get("/athena/memory/search-file-understandings")
+async def search_file_understandings(
+    query: str = Query(default=""),
+    limit: int = Query(default=20),
+):
+    result = memory_agent.search_file_understandings(query=query, limit=limit)
+    status = result.get("status", "blocked")
+
+    if status == "success":
+        event_bus.publish(
+            "FileUnderstandingsSearched",
+            "memory_agent",
+            {
+                "query": result.get("query", ""),
+                "count": result.get("count", 0),
+                "limit": min(int(limit), 100) if isinstance(limit, int) else 20,
+                "result": "success",
+            },
+        )
+    else:
+        event_bus.publish(
+            "DesktopActionFailed",
+            "memory_agent",
+            {
+                "action": "search_file_understandings",
+                "query": query,
+                "result": "failed",
+                "reason": result.get("reason", "memory_search_error"),
+            },
+        )
+
+    response = {
+        "engine": "memory_agent",
+        "status": status,
+        "query": result.get("query", query),
+        "count": int(result.get("count", 0) or 0),
+        "records": result.get("records", []),
+        "message": result.get("message", ""),
+    }
+    if status != "success":
+        response["reason"] = result.get("reason", "memory_search_error")
+    return response
