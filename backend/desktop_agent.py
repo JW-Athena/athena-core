@@ -52,5 +52,21 @@ class AthenaDesktopAgent:
             "message": "Notepad opened successfully.",
         }
 
+    def open_explorer(self) -> Dict[str, Any]:
+        try:
+            subprocess.Popen(["explorer.exe"])
+        except Exception as exc:
+            return {
+                "status": "failed",
+                "executed": False,
+                "message": f"Failed to open File Explorer: {exc}",
+            }
+
+        return {
+            "status": "success",
+            "executed": True,
+            "message": "File Explorer opened successfully.",
+        }
+
 
 desktop_agent = AthenaDesktopAgent()
