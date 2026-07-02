@@ -76,6 +76,53 @@ class AthenaPlanner:
             "engines_selected": len(plan.get("workflow", [])),
         }
 
+    def recommend_from_file_memory(self, query: str, memory_agent: Any) -> Dict[str, Any]:
+        clean_query = str(query or "").strip()
+        if not clean_query:
+            return {
+                "status": "blocked",
+                "reason": "empty_query",
+                "query": "",
+                "matches_found": 0,
+                "recommendation": {},
+                "message": "Query is required.",
+            }
+
+        try:
+            memory_result = memory_agent.search_file_understandings(
+                query=clean_query,
+                limit=20,
+            )
+            if memory_result.get("status") != "success":
+                return {
+                    "status": "blocked",
+                    "reason": memory_result.get("reason", "planner_error"),
+                    "query": clean_query,
+                    "matches_found": 0,
+                    "recommendation": {},
+                    "message": memory_result.get("message", "Planner memory search failed."),
+                }
+
+            records = memory_result.get("records", [])
+            recommendation = self._file_memory_recommendation(records)
+
+            return {
+                "status": "success",
+                "query": clean_query,
+                "matches_found": len(records),
+                "recommendation": recommendation,
+                "message": "Planner recommendation generated from file memory.",
+            }
+        except Exception as exc:
+            return {
+                "status": "blocked",
+                "reason": "planner_error",
+                "query": clean_query,
+                "matches_found": 0,
+                "recommendation": {},
+                "message": f"Planner recommendation failed: {exc}",
+            }
+
     def _detect_intent(self, question: Optional[str]) -> str:
         signal = (question or "").lower()
 
@@ -174,3 +221,40 @@ class AthenaPlanner:
         if intent == "question_answering":
             return bool(metadata.get("filename"))
         return True
+
+    def _file_memory_recommendation(self, records: list) -> Dict[str, Any]:
+        if not records:
+            return {
+                "next_step": "search_files",
+                "reason": "No stored file understanding matched the query, so ATHENA should search local safe folders for relevant files.",
+                "risk": "low",
+                "requires_approval": False,
+            }
+
+        combined_summary = " ".join(
+            str(record.get("summary_text", "") or "")
+            for record in records
+        ).lower()
+        executive_terms = [
+            "tender",
+            "closing date",
+            "required documents",
+            "compliance",
+            "delivery",
+            "supplier",
+        ]
+
+        if any(term in combined_summary for term in executive_terms):
+            return {
+                "next_step": "executive_document_analysis",
+                "reason": "Stored file understanding appears to contain tender or compliance-related content.",
+                "risk": "medium",
+                "requires_approval": False,
+            }
+
+        return {
+            "next_step": "review_file_understanding",
+            "reason": "Stored file understanding matched the query and should be reviewed before selecting a deeper workflow.",
+            "risk": "low",
+            "requires_approval": False,
+        }
