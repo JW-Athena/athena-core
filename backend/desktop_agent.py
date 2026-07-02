@@ -1,3 +1,4 @@
+import os
 import subprocess
 from typing import Any, Dict
 
@@ -66,6 +67,80 @@ class AthenaDesktopAgent:
             "status": "success",
             "executed": True,
             "message": "File Explorer opened successfully.",
+        }
+
+    def open_folder(self, path: str) -> Dict[str, Any]:
+        validation = self._validate_folder_path(path)
+        if not validation["valid"]:
+            return {
+                "status": "failed",
+                "path": validation["path"],
+                "executed": False,
+                "message": validation["message"],
+            }
+
+        safe_path = validation["path"]
+        try:
+            subprocess.Popen(["explorer.exe", safe_path])
+        except Exception as exc:
+            return {
+                "status": "failed",
+                "path": safe_path,
+                "executed": False,
+                "message": f"Failed to open folder: {exc}",
+            }
+
+        return {
+            "status": "success",
+            "path": safe_path,
+            "executed": True,
+            "message": "Folder opened successfully.",
+        }
+
+    def _validate_folder_path(self, path: str) -> Dict[str, Any]:
+        requested_path = str(path or "").strip().strip('"')
+        if not requested_path:
+            return self._folder_validation(False, "", "Folder path is required.")
+
+        lowered = requested_path.lower()
+        if requested_path.startswith(("\\\\", "//")):
+            return self._folder_validation(False, requested_path, "Network and UNC paths are not allowed.")
+        if any(token in lowered for token in ["shell:", "control panel", "::{", "registry", "regedit"]):
+            return self._folder_validation(False, requested_path, "Shell, registry, and Control Panel paths are not allowed.")
+        if not os.path.isabs(requested_path) or not os.path.splitdrive(requested_path)[0]:
+            return self._folder_validation(False, requested_path, "Only absolute local drive folders are allowed.")
+
+        absolute_path = os.path.abspath(requested_path)
+        if not os.path.isdir(absolute_path):
+            return self._folder_validation(False, absolute_path, "Folder does not exist.")
+        if self._is_admin_folder(absolute_path):
+            return self._folder_validation(False, absolute_path, "Administrative and system folders are not allowed.")
+
+        return self._folder_validation(True, absolute_path, "")
+
+    def _is_admin_folder(self, path: str) -> bool:
+        normalized = os.path.normcase(os.path.abspath(path))
+        protected_roots = [
+            os.environ.get("SystemRoot", r"C:\Windows"),
+            os.environ.get("ProgramFiles", r"C:\Program Files"),
+            os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"),
+            os.environ.get("ProgramData", r"C:\ProgramData"),
+        ]
+
+        for root in protected_roots:
+            if not root:
+                continue
+            protected = os.path.normcase(os.path.abspath(root))
+            if normalized == protected or normalized.startswith(protected + os.sep):
+                return True
+
+        return False
+
+    def _folder_validation(self, valid: bool, path: str, message: str) -> Dict[str, Any]:
+        return {
+            "valid": valid,
+            "path": path,
+            "message": message,
         }
 
 
