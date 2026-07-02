@@ -4,10 +4,15 @@ import time
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
 from core.athena_core import AthenaCore
+from bid_no_bid_engine import BidNoBidEngine
+from commercial_exposure_engine import CommercialExposureEngine
 from contract_intelligence_engine import ContractIntelligenceEngine
+from engine_009_rag_answer_engine import RAGAnswerEngine
 from executive_dashboard_engine import ExecutiveDashboardEngine
 from executive_report_engine import ExecutiveReportEngine
 from executive_scenarios_engine import ExecutiveScenariosEngine
+from opportunity_scoring_engine import OpportunityScoringEngine
+from risk_register_engine import RiskRegisterEngine
 from timing_utils import new_request_context, timed_step
 
 
@@ -18,6 +23,11 @@ dashboard_engine = ExecutiveDashboardEngine()
 report_engine = ExecutiveReportEngine()
 contract_engine = ContractIntelligenceEngine()
 scenarios_engine = ExecutiveScenariosEngine()
+risk_engine = RiskRegisterEngine()
+commercial_engine = CommercialExposureEngine()
+opportunity_engine = OpportunityScoringEngine()
+bid_engine = BidNoBidEngine()
+rag_engine = RAGAnswerEngine()
 
 
 @router.post("/athena/analyze")
@@ -33,10 +43,15 @@ async def analyze_with_athena(
             detail="Provide a file, a question, or both.",
         )
 
+    request_context = new_request_context()
+
     if file is None:
-        result = athena_core.answer(
-            question=question or "",
+        result = _analyze_document(
+            text="",
+            document_type=document_type,
+            question=question,
             limit=limit,
+            request_context=request_context,
         )
 
         return {
@@ -45,7 +60,6 @@ async def analyze_with_athena(
             "result": result,
         }
 
-    request_context = new_request_context()
     started = time.perf_counter()
     content = await file.read()
     print(
@@ -87,81 +101,18 @@ def _analyze_document(
     limit: int,
     request_context: Dict[str, Any],
 ) -> Dict[str, Any]:
-    detected_workflow = _detect_workflow(
-        question=question,
-        document_type=document_type,
+    workflow = _detect_workflow(question=question)
+    engine_outputs = _run_workflow(
+        workflow=workflow,
         text=text,
+        document_type=document_type,
+        question=question,
+        limit=limit,
+        request_context=request_context,
     )
-    workflow = detected_workflow if question else "executive_document_analysis"
-    brain_response = {}
+    selected_engines = list(engine_outputs.keys())
 
-    if question:
-        brain_response = _safe_call(
-            "athena_core",
-            lambda: athena_core.answer(
-                question=question,
-                limit=limit,
-            ),
-            request_context,
-        )
-
-    dashboard_result = _safe_call(
-        "executive_dashboard",
-        lambda: dashboard_engine.analyze(
-            text=text,
-            document_type=document_type,
-            request_context=request_context,
-        ),
-        request_context,
-    )
-    report_result = {}
-    contract_result = {}
-    scenarios_result = {}
-
-    if detected_workflow in {"executive", "report", "contract", "scenario"}:
-        report_result = _safe_call(
-            "executive_report",
-            lambda: report_engine.generate(
-                text=text,
-                document_type=document_type,
-                request_context=request_context,
-            ),
-            request_context,
-        )
-
-    if detected_workflow == "contract":
-        contract_result = _safe_call(
-            "contract_intelligence",
-            lambda: contract_engine.analyze(
-                text=text,
-                document_type=document_type,
-                request_context=request_context,
-            ),
-            request_context,
-        )
-
-    if detected_workflow == "scenario":
-        scenarios_result = _safe_call(
-            "executive_scenarios",
-            lambda: scenarios_engine.analyze(
-                text=text,
-                document_type=document_type,
-                request_context=request_context,
-            ),
-            request_context,
-        )
-
-    dashboard = dashboard_result.get("executive_dashboard", {})
-    report = report_result.get("executive_report", {})
-    selected_engines = _selected_engines(
-        dashboard_result=dashboard_result,
-        report_result=report_result,
-        contract_result=contract_result,
-        scenarios_result=scenarios_result,
-        brain_response=brain_response,
-    )
-
-    result = {
+    return {
         "workflow": workflow,
         "question": question or "",
         "document_type": document_type or "",
@@ -172,44 +123,230 @@ def _analyze_document(
             question=question,
         ),
         "executive_response": _executive_response(
-            dashboard=dashboard,
-            report=report,
+            workflow=workflow,
+            engine_outputs=engine_outputs,
             question=question,
         ),
         "selected_engines": selected_engines,
+        "engine_outputs": engine_outputs,
     }
 
-    if dashboard:
-        result["executive_dashboard"] = dashboard
-    if report:
-        result["executive_report"] = report
-    contract = contract_result.get("contract_intelligence", {})
-    if contract:
-        result["contract_intelligence"] = contract
-    scenario_analysis = scenarios_result.get("scenario_analysis", {})
-    if scenario_analysis:
-        result["scenario_analysis"] = scenario_analysis
-    if brain_response:
-        result["brain_response"] = brain_response
 
-    return result
-
-
-def _detect_workflow(
-    question: Optional[str],
-    document_type: Optional[str],
+def _run_workflow(
+    workflow: str,
     text: str,
-) -> str:
-    signal = f"{question or ''} {document_type or ''} {text[:1000]}".lower()
+    document_type: Optional[str],
+    question: Optional[str],
+    limit: int,
+    request_context: Dict[str, Any],
+) -> Dict[str, Any]:
+    outputs = {}
 
-    if any(term in signal for term in ["scenario", "option", "alternative", "what if"]):
-        return "scenario"
-    if any(term in signal for term in ["contract", "clause", "legal", "liability", "termination"]):
-        return "contract"
-    if any(term in signal for term in ["report", "summary", "recommendation", "decision"]):
-        return "report"
+    if workflow == "executive_document_analysis":
+        _add_output(
+            outputs,
+            "executive_dashboard",
+            _safe_call(
+                "executive_dashboard",
+                lambda: dashboard_engine.analyze(
+                    text=text,
+                    document_type=document_type,
+                    request_context=request_context,
+                ),
+                request_context,
+            ).get("executive_dashboard", {}),
+        )
+        _add_output(
+            outputs,
+            "executive_report",
+            _safe_call(
+                "executive_report",
+                lambda: report_engine.generate(
+                    text=text,
+                    document_type=document_type,
+                    request_context=request_context,
+                ),
+                request_context,
+            ).get("executive_report", {}),
+        )
+        return outputs
 
-    return "executive"
+    if workflow == "contract_review":
+        _add_output(
+            outputs,
+            "contract_intelligence",
+            _safe_call(
+                "contract_intelligence",
+                lambda: contract_engine.analyze(
+                    text=text,
+                    document_type=document_type,
+                    request_context=request_context,
+                ),
+                request_context,
+            ).get("contract_intelligence", {}),
+        )
+        _add_dashboard(outputs, text, document_type, request_context)
+        return outputs
+
+    if workflow == "risk_review":
+        _add_output(
+            outputs,
+            "risk_register",
+            _safe_call(
+                "risk_register",
+                lambda: risk_engine.generate(
+                    text=text,
+                    document_type=document_type,
+                    request_context=request_context,
+                ),
+                request_context,
+            ).get("risk_register", {}),
+        )
+        _add_dashboard(outputs, text, document_type, request_context)
+        return outputs
+
+    if workflow == "commercial_review":
+        _add_output(
+            outputs,
+            "commercial_exposure",
+            _safe_call(
+                "commercial_exposure",
+                lambda: commercial_engine.analyze(
+                    text=text,
+                    document_type=document_type,
+                    request_context=request_context,
+                ),
+                request_context,
+            ).get("commercial_exposure", {}),
+        )
+        _add_dashboard(outputs, text, document_type, request_context)
+        return outputs
+
+    if workflow == "opportunity_assessment":
+        _add_output(
+            outputs,
+            "opportunity_scoring",
+            _safe_call(
+                "opportunity_scoring",
+                lambda: opportunity_engine.evaluate(
+                    text=text,
+                    document_type=document_type,
+                    request_context=request_context,
+                ),
+                request_context,
+            ).get("opportunity_score", {}),
+        )
+        _add_output(
+            outputs,
+            "bid_no_bid",
+            _safe_call(
+                "bid_no_bid",
+                lambda: bid_engine.evaluate(
+                    text=text,
+                    document_type=document_type,
+                    request_context=request_context,
+                ),
+                request_context,
+            ).get("decision", {}),
+        )
+        _add_dashboard(outputs, text, document_type, request_context)
+        return outputs
+
+    if workflow == "scenario_analysis":
+        _add_output(
+            outputs,
+            "executive_scenarios",
+            _safe_call(
+                "executive_scenarios",
+                lambda: scenarios_engine.analyze(
+                    text=text,
+                    document_type=document_type,
+                    request_context=request_context,
+                ),
+                request_context,
+            ).get("scenario_analysis", {}),
+        )
+        _add_dashboard(outputs, text, document_type, request_context)
+        return outputs
+
+    if workflow == "report_generation":
+        _add_output(
+            outputs,
+            "executive_report",
+            _safe_call(
+                "executive_report",
+                lambda: report_engine.generate(
+                    text=text,
+                    document_type=document_type,
+                    request_context=request_context,
+                ),
+                request_context,
+            ).get("executive_report", {}),
+        )
+        _add_dashboard(outputs, text, document_type, request_context)
+        return outputs
+
+    _add_output(
+        outputs,
+        "rag_answer",
+        _safe_call(
+            "rag_answer",
+            lambda: rag_engine.answer(
+                question=question or "",
+                limit=limit,
+            ),
+            request_context,
+        ),
+    )
+    return outputs
+
+
+def _add_dashboard(
+    outputs: Dict[str, Any],
+    text: str,
+    document_type: Optional[str],
+    request_context: Dict[str, Any],
+) -> None:
+    _add_output(
+        outputs,
+        "executive_dashboard",
+        _safe_call(
+            "executive_dashboard",
+            lambda: dashboard_engine.analyze(
+                text=text,
+                document_type=document_type,
+                request_context=request_context,
+            ),
+            request_context,
+        ).get("executive_dashboard", {}),
+    )
+
+
+def _add_output(outputs: Dict[str, Any], key: str, value: Any) -> None:
+    if value:
+        outputs[key] = value
+
+
+def _detect_workflow(question: Optional[str]) -> str:
+    signal = (question or "").lower()
+
+    if not signal.strip():
+        return "executive_document_analysis"
+
+    if any(term in signal for term in ["contract", "legal", "terms", "obligation", "warranty", "penalty", "termination"]):
+        return "contract_review"
+    if any(term in signal for term in ["commercial", "price", "value", "payment", "currency", "margin", "cost"]):
+        return "commercial_review"
+    if any(term in signal for term in ["risk", "exposure", "liability", "critical", "danger"]):
+        return "risk_review"
+    if any(term in signal for term in ["opportunity", "score", "bid", "no-bid", "should we bid"]):
+        return "opportunity_assessment"
+    if any(term in signal for term in ["scenario", "option", "what if", "proceed", "delay", "no bid"]):
+        return "scenario_analysis"
+    if any(term in signal for term in ["report", "summary", "brief"]):
+        return "report_generation"
+
+    return "question_answering"
 
 
 def _safe_call(name: str, callback, request_context: Dict[str, Any]) -> Dict[str, Any]:
@@ -226,27 +363,6 @@ def _safe_call(name: str, callback, request_context: Dict[str, Any]) -> Dict[str
         return {}
 
 
-def _selected_engines(
-    dashboard_result: Dict[str, Any],
-    report_result: Dict[str, Any],
-    contract_result: Dict[str, Any],
-    scenarios_result: Dict[str, Any],
-    brain_response: Dict[str, Any],
-) -> list:
-    selected = []
-    if brain_response:
-        selected.append("athena_core")
-    if dashboard_result:
-        selected.append("executive_dashboard")
-    if report_result:
-        selected.append("executive_report")
-    if contract_result:
-        selected.append("contract_intelligence")
-    if scenarios_result:
-        selected.append("executive_scenarios")
-    return selected
-
-
 def _brain_summary(
     workflow: str,
     document_type: Optional[str],
@@ -254,29 +370,35 @@ def _brain_summary(
     question: Optional[str],
 ) -> str:
     engine_names = {
-        "athena_core": "ATHENA Core",
         "executive_dashboard": "executive dashboard",
         "executive_report": "executive report",
         "contract_intelligence": "contract intelligence",
         "executive_scenarios": "executive scenarios",
+        "risk_register": "risk register",
+        "commercial_exposure": "commercial exposure",
+        "opportunity_scoring": "opportunity scoring",
+        "bid_no_bid": "bid/no-bid",
+        "rag_answer": "knowledge answer",
     }
     selected = [
         engine_names.get(engine, engine.replace("_", " "))
         for engine in selected_engines
-        if engine != "athena_core" or question
     ]
     selected_text = _join_words(selected)
 
     if workflow == "executive_document_analysis":
         document_label = f"{document_type.lower()}-style" if document_type else "executive"
         return (
-            f"ATHENA identified this as a {document_label} document and "
+            f"ATHENA identified this as a {document_label} executive document and "
             f"selected {selected_text} workflows."
         )
 
+    if workflow == "question_answering":
+        return "ATHENA classified the request as question answering and selected the knowledge answer workflow."
+
     if question:
         return (
-            f"ATHENA used the question to guide document analysis and selected "
+            f"ATHENA classified the request as {workflow.replace('_', ' ')} and selected "
             f"{selected_text} workflows."
         )
 
@@ -284,10 +406,20 @@ def _brain_summary(
 
 
 def _executive_response(
-    dashboard: Dict[str, Any],
-    report: Dict[str, Any],
+    workflow: str,
+    engine_outputs: Dict[str, Any],
     question: Optional[str],
 ) -> Dict[str, Any]:
+    dashboard = engine_outputs.get("executive_dashboard", {})
+    report = engine_outputs.get("executive_report", {})
+    contract = engine_outputs.get("contract_intelligence", {})
+    risk_register = engine_outputs.get("risk_register", {})
+    commercial_exposure = engine_outputs.get("commercial_exposure", {})
+    opportunity_scoring = engine_outputs.get("opportunity_scoring", {})
+    bid_no_bid = engine_outputs.get("bid_no_bid", {})
+    scenarios = engine_outputs.get("executive_scenarios", {})
+    rag_answer = engine_outputs.get("rag_answer", {})
+
     opportunity = report.get("opportunity_assessment", {})
     risk = report.get("risk_assessment", {})
     commercial = report.get("commercial_assessment", {})
@@ -308,8 +440,8 @@ def _executive_response(
         "Assign accountable owners to close open commercial, compliance, and risk items.",
     )
 
-    return {
-        "mode": "question_guided" if question else "document_analysis",
+    response = {
+        "mode": workflow,
         "verdict": verdict,
         "summary": summary,
         "opportunity_score": _number_or_default(
@@ -338,6 +470,75 @@ def _executive_response(
         "next_step": next_step,
     }
 
+    if workflow == "contract_review":
+        response.update(
+            {
+                "contract_risk": _first_value(contract.get("overall_contract_risk"), "Unknown"),
+                "contract_summary": _first_value(contract.get("contract_summary"), summary),
+                "next_step": _first_list_value(contract.get("recommended_actions")) or next_step,
+            }
+        )
+    elif workflow == "risk_review":
+        response.update(
+            {
+                "risk_level": _first_value(
+                    risk_register.get("overall_risk_level"),
+                    response.get("risk_level"),
+                ),
+                "major_risk_count": _number_or_default(
+                    _first_value(risk_register.get("high_risks"), 0),
+                    default=0,
+                ),
+            }
+        )
+    elif workflow == "commercial_review":
+        response.update(
+            {
+                "commercial_exposure": _first_value(
+                    commercial_exposure.get("overall_commercial_risk"),
+                    response.get("commercial_exposure"),
+                ),
+                "payment_terms": _first_value(commercial_exposure.get("payment_terms"), "Not stated"),
+            }
+        )
+    elif workflow == "opportunity_assessment":
+        response.update(
+            {
+                "opportunity_score": _number_or_default(
+                    _first_value(opportunity_scoring.get("overall_score"), response.get("opportunity_score")),
+                    default=0,
+                ),
+                "opportunity_level": _first_value(opportunity_scoring.get("opportunity_level"), "Unknown"),
+                "bid_posture": _first_value(
+                    opportunity_scoring.get("bid_recommendation"),
+                    bid_no_bid.get("recommendation"),
+                    response.get("bid_posture"),
+                ),
+            }
+        )
+    elif workflow == "scenario_analysis":
+        response.update(
+            {
+                "recommended_scenario": _first_value(scenarios.get("recommended_scenario"), "Proceed After Risk Closure"),
+                "best_business_outcome": _first_value(scenarios.get("best_business_outcome"), ""),
+                "next_step": _first_value(scenarios.get("recommended_next_step"), next_step),
+            }
+        )
+    elif workflow == "question_answering":
+        answer = rag_answer.get("answer", {})
+        response.update(
+            {
+                "verdict": "Question answered from available ATHENA knowledge.",
+                "summary": _first_value(
+                    answer.get("direct_answer") if isinstance(answer, dict) else answer,
+                    "ATHENA could not find enough information to answer with confidence.",
+                ),
+                "next_step": "Review the supporting ATHENA response before taking action.",
+            }
+        )
+
+    return response
+
 
 def _first_value(*values: Any) -> str:
     for value in values:
@@ -356,6 +557,15 @@ def _number_or_default(value: Any, default: int = 0) -> int:
         return round(float(value))
     except (TypeError, ValueError):
         return default
+
+
+def _first_list_value(value: Any) -> str:
+    if isinstance(value, list) and value:
+        first = value[0]
+        if isinstance(first, dict):
+            return _first_value(first.get("action"), first.get("title"), first.get("summary"))
+        return _first_value(first)
+    return ""
 
 
 def _join_words(values: list) -> str:
