@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from desktop_agent import desktop_agent
+from event_bus import event_bus
 
 
 router = APIRouter(tags=["ATHENA Desktop Agent"])
@@ -12,4 +13,29 @@ async def desktop_status():
         "engine": "desktop_agent",
         "status": "success",
         "desktop": desktop_agent.status(),
+    }
+
+
+@router.post("/athena/desktop/open-notepad")
+async def open_notepad():
+    result = desktop_agent.open_notepad()
+    status = result.get("status", "failed")
+    executed = bool(result.get("executed", False))
+    event_type = "DesktopActionExecuted" if executed else "DesktopActionFailed"
+
+    event_bus.publish(
+        event_type,
+        "desktop_agent",
+        {
+            "action": "open_notepad",
+            "result": status,
+        },
+    )
+
+    return {
+        "engine": "desktop_agent",
+        "status": status,
+        "action": "open_notepad",
+        "executed": executed,
+        "message": result.get("message", ""),
     }

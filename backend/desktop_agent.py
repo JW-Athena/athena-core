@@ -1,3 +1,4 @@
+import subprocess
 from typing import Any, Dict
 
 
@@ -34,6 +35,22 @@ class AthenaDesktopAgent:
             and execution_mode != "planning_only"
             and not approval_required
         )
+
+    def open_notepad(self) -> Dict[str, Any]:
+        try:
+            subprocess.Popen(["notepad.exe"])
+        except Exception as exc:
+            return {
+                "status": "failed",
+                "executed": False,
+                "message": f"Failed to open Notepad: {exc}",
+            }
+
+        return {
+            "status": "success",
+            "executed": True,
+            "message": "Notepad opened successfully.",
+        }
 
 
 desktop_agent = AthenaDesktopAgent()
