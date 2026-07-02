@@ -75,6 +75,56 @@ class AthenaWorkflowAgent:
                 steps_completed=steps_completed,
             )
 
+    def file_understanding_with_memory(
+        self,
+        desktop_agent: Any,
+        reasoning_agent: Any,
+        memory_agent: Any,
+        path: str,
+    ) -> Dict[str, Any]:
+        result = self.file_understanding(
+            desktop_agent=desktop_agent,
+            reasoning_agent=reasoning_agent,
+            path=path,
+        )
+        workflow = result.get("workflow", {})
+
+        if result.get("status") != "success":
+            workflow["name"] = "file_understanding_with_memory"
+            result["workflow"] = workflow
+            return result
+
+        memory_workflow = dict(workflow)
+        memory_workflow["name"] = "file_understanding"
+
+        memory_result = memory_agent.store_file_understanding(memory_workflow)
+        if memory_result.get("status") != "success":
+            return {
+                "status": "blocked",
+                "step": "store_file_understanding",
+                "reason": memory_result.get("reason", "memory_store_error"),
+                "workflow": {
+                    "name": "file_understanding_with_memory",
+                    "steps_completed": list(workflow.get("steps_completed", [])),
+                    "file": workflow.get("file", {}),
+                    "summary": workflow.get("summary", {}),
+                    "memory_record": {},
+                },
+                "message": memory_result.get("message", "File understanding memory storage failed."),
+            }
+
+        return {
+            "status": "success",
+            "workflow": {
+                "name": "file_understanding_with_memory",
+                "steps_completed": list(workflow.get("steps_completed", [])) + ["store_file_understanding"],
+                "file": workflow.get("file", {}),
+                "summary": workflow.get("summary", {}),
+                "memory_record": memory_result.get("memory_record", {}),
+            },
+            "message": "File understanding workflow completed and stored in memory.",
+        }
+
     def evaluate(
         self,
         initial_workflow: List[str],
