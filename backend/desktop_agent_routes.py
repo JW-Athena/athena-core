@@ -237,3 +237,44 @@ async def search_files(payload: Dict[str, Any] = Body(default_factory=dict)):
         "results": result.get("results", []),
         "message": result.get("message", ""),
     }
+
+
+@router.post("/athena/desktop/open-file-location")
+async def open_file_location(payload: Dict[str, Any] = Body(default_factory=dict)):
+    result = desktop_agent.open_file_location(payload.get("path", ""))
+    status = result.get("status", "failed")
+
+    if status == "success":
+        event_bus.publish(
+            "DesktopFileLocationOpened",
+            "desktop_agent",
+            {
+                "action": "open_file_location",
+                "path": result.get("path", ""),
+                "folder": result.get("folder", ""),
+                "result": "success",
+            },
+        )
+    else:
+        event_bus.publish(
+            "DesktopActionFailed",
+            "desktop_agent",
+            {
+                "action": "open_file_location",
+                "path": result.get("path", ""),
+                "result": "failed",
+                "reason": result.get("reason", "open_error"),
+            },
+        )
+
+    response = {
+        "engine": "desktop_agent",
+        "status": status,
+        "path": result.get("path", ""),
+        "folder": result.get("folder", ""),
+        "name": result.get("name", ""),
+        "message": result.get("message", ""),
+    }
+    if status != "success":
+        response["reason"] = result.get("reason", "open_error")
+    return response
