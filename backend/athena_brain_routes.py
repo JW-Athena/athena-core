@@ -13,13 +13,7 @@ from executive_report_engine import ExecutiveReportEngine
 from executive_scenarios_engine import ExecutiveScenariosEngine
 from opportunity_scoring_engine import OpportunityScoringEngine
 from risk_register_engine import RiskRegisterEngine
-from athena_clarification_agent import AthenaClarificationAgent
-from athena_decision_engine import AthenaDecisionEngine
-from athena_memory_agent import AthenaMemoryAgent
-from athena_planner import AthenaPlanner
-from athena_reasoning_agent import AthenaReasoningAgent
-from athena_task_agent import AthenaTaskAgent
-from athena_workflow_agent import AthenaWorkflowAgent
+from agent_registry import agent_registry
 from timing_utils import new_request_context, timed_step
 
 
@@ -35,13 +29,22 @@ commercial_engine = CommercialExposureEngine()
 opportunity_engine = OpportunityScoringEngine()
 bid_engine = BidNoBidEngine()
 rag_engine = RAGAnswerEngine()
-planner = AthenaPlanner()
-memory_agent = AthenaMemoryAgent()
-reasoning_agent = AthenaReasoningAgent()
-clarification_agent = AthenaClarificationAgent()
-workflow_agent = AthenaWorkflowAgent()
-decision_engine = AthenaDecisionEngine()
-task_agent = AthenaTaskAgent()
+planner = agent_registry.create_agent("planner")
+memory_agent = agent_registry.create_agent("memory_agent")
+reasoning_agent = agent_registry.create_agent("reasoning_agent")
+clarification_agent = agent_registry.create_agent("clarification_agent")
+workflow_agent = agent_registry.create_agent("workflow_agent")
+decision_engine = agent_registry.create_agent("decision_engine")
+task_agent = agent_registry.create_agent("task_agent")
+
+
+@router.get("/athena/agents")
+async def list_athena_agents():
+    return {
+        "engine": "agent_registry",
+        "status": "success",
+        "agents": agent_registry.list_agents(),
+    }
 
 
 @router.post("/athena/analyze")
