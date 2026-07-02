@@ -1,6 +1,6 @@
 from typing import Any, Dict
 
-from fastapi import APIRouter, Body
+from fastapi import APIRouter, Body, Query
 
 from athena_memory_agent import AthenaMemoryAgent
 from event_bus import event_bus
@@ -52,4 +52,42 @@ async def store_file_understanding(payload: Dict[str, Any] = Body(default_factor
     }
     if status != "success":
         response["reason"] = result.get("reason", "memory_store_error")
+    return response
+
+
+@router.get("/athena/memory/file-understandings")
+async def list_file_understandings(limit: int = Query(default=20)):
+    result = memory_agent.list_file_understandings(limit=limit)
+    status = result.get("status", "blocked")
+
+    if status == "success":
+        event_bus.publish(
+            "FileUnderstandingsListed",
+            "memory_agent",
+            {
+                "count": result.get("count", 0),
+                "limit": min(int(limit), 100) if isinstance(limit, int) else 20,
+                "result": "success",
+            },
+        )
+    else:
+        event_bus.publish(
+            "DesktopActionFailed",
+            "memory_agent",
+            {
+                "action": "list_file_understandings",
+                "result": "failed",
+                "reason": result.get("reason", "memory_read_error"),
+            },
+        )
+
+    response = {
+        "engine": "memory_agent",
+        "status": status,
+        "count": int(result.get("count", 0) or 0),
+        "records": result.get("records", []),
+        "message": result.get("message", ""),
+    }
+    if status != "success":
+        response["reason"] = result.get("reason", "memory_read_error")
     return response
