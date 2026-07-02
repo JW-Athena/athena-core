@@ -13,6 +13,7 @@ from executive_report_engine import ExecutiveReportEngine
 from executive_scenarios_engine import ExecutiveScenariosEngine
 from opportunity_scoring_engine import OpportunityScoringEngine
 from risk_register_engine import RiskRegisterEngine
+from athena_planner import AthenaPlanner
 from timing_utils import new_request_context, timed_step
 
 
@@ -28,6 +29,7 @@ commercial_engine = CommercialExposureEngine()
 opportunity_engine = OpportunityScoringEngine()
 bid_engine = BidNoBidEngine()
 rag_engine = RAGAnswerEngine()
+planner = AthenaPlanner()
 
 
 @router.post("/athena/analyze")
@@ -52,6 +54,7 @@ async def analyze_with_athena(
             question=question,
             limit=limit,
             request_context=request_context,
+            metadata={},
         )
 
         return {
@@ -85,6 +88,11 @@ async def analyze_with_athena(
         question=question,
         limit=limit,
         request_context=request_context,
+        metadata={
+            "filename": file.filename,
+            "content_type": file.content_type,
+            "size_bytes": len(content),
+        },
     )
 
     return {
@@ -100,8 +108,14 @@ def _analyze_document(
     question: Optional[str],
     limit: int,
     request_context: Dict[str, Any],
+    metadata: Dict[str, Any],
 ) -> Dict[str, Any]:
-    workflow = _detect_workflow(question=question)
+    plan = planner.plan(
+        question=question,
+        document_type=document_type,
+        metadata=metadata,
+    )
+    workflow = plan.get("intent", "question_answering")
     engine_outputs = _run_workflow(
         workflow=workflow,
         text=text,
@@ -116,6 +130,7 @@ def _analyze_document(
         "workflow": workflow,
         "question": question or "",
         "document_type": document_type or "",
+        "planning": planner.public_plan(plan),
         "brain_summary": _brain_summary(
             workflow=workflow,
             document_type=document_type,
@@ -325,28 +340,6 @@ def _add_dashboard(
 def _add_output(outputs: Dict[str, Any], key: str, value: Any) -> None:
     if value:
         outputs[key] = value
-
-
-def _detect_workflow(question: Optional[str]) -> str:
-    signal = (question or "").lower()
-
-    if not signal.strip():
-        return "executive_document_analysis"
-
-    if any(term in signal for term in ["contract", "legal", "terms", "obligation", "warranty", "penalty", "termination"]):
-        return "contract_review"
-    if any(term in signal for term in ["commercial", "price", "value", "payment", "currency", "margin", "cost"]):
-        return "commercial_review"
-    if any(term in signal for term in ["risk", "exposure", "liability", "critical", "danger"]):
-        return "risk_review"
-    if any(term in signal for term in ["opportunity", "score", "bid", "no-bid", "should we bid"]):
-        return "opportunity_assessment"
-    if any(term in signal for term in ["scenario", "option", "what if", "proceed", "delay", "no bid"]):
-        return "scenario_analysis"
-    if any(term in signal for term in ["report", "summary", "brief"]):
-        return "report_generation"
-
-    return "question_answering"
 
 
 def _safe_call(name: str, callback, request_context: Dict[str, Any]) -> Dict[str, Any]:
