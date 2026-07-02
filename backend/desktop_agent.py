@@ -1,5 +1,6 @@
 import os
 import subprocess
+from fnmatch import fnmatch
 from datetime import datetime
 from typing import Any, Dict
 
@@ -264,6 +265,85 @@ class AthenaDesktopAgent:
             "message": "Safe text file read successfully.",
         }
 
+    def search_files(
+        self,
+        folder: str,
+        pattern: str = "*",
+        recursive: bool = False,
+        max_results: int = 100,
+    ) -> Dict[str, Any]:
+        validation = self._validate_folder_path(folder)
+        if not validation["valid"]:
+            return {
+                "status": "failed",
+                "folder": validation["path"],
+                "pattern": pattern or "*",
+                "recursive": bool(recursive),
+                "max_results": self._safe_max_results(max_results),
+                "result_count": 0,
+                "results": [],
+                "message": validation["message"],
+            }
+
+        safe_folder = validation["path"]
+        safe_pattern = str(pattern or "*").strip() or "*"
+        safe_max_results = self._safe_max_results(max_results)
+        results = []
+
+        try:
+            if recursive:
+                for root, dirs, files in os.walk(safe_folder):
+                    dirs[:] = [
+                        directory
+                        for directory in dirs
+                        if not self._is_admin_folder(os.path.join(root, directory))
+                    ]
+                    self._append_matching_files(
+                        results=results,
+                        root=root,
+                        files=files,
+                        pattern=safe_pattern,
+                        max_results=safe_max_results,
+                    )
+                    if len(results) >= safe_max_results:
+                        break
+            else:
+                files = []
+                with os.scandir(safe_folder) as entries:
+                    for entry in entries:
+                        if entry.is_file(follow_symlinks=False):
+                            files.append(entry.name)
+                self._append_matching_files(
+                    results=results,
+                    root=safe_folder,
+                    files=files,
+                    pattern=safe_pattern,
+                    max_results=safe_max_results,
+                )
+        except Exception as exc:
+            return {
+                "status": "failed",
+                "folder": safe_folder,
+                "pattern": safe_pattern,
+                "recursive": bool(recursive),
+                "max_results": safe_max_results,
+                "result_count": len(results),
+                "results": results,
+                "message": f"Failed to search files: {exc}",
+            }
+
+        results.sort(key=lambda item: item["path"].lower())
+        return {
+            "status": "success",
+            "folder": safe_folder,
+            "pattern": safe_pattern,
+            "recursive": bool(recursive),
+            "max_results": safe_max_results,
+            "result_count": len(results),
+            "results": results,
+            "message": "",
+        }
+
     def _validate_folder_path(self, path: str) -> Dict[str, Any]:
         requested_path = str(path or "").strip().strip('"')
         if not requested_path:
@@ -364,6 +444,47 @@ class AthenaDesktopAgent:
                 return True
 
         return False
+
+    def _safe_max_results(self, max_results: int) -> int:
+        try:
+            requested = int(max_results)
+        except (TypeError, ValueError):
+            requested = 100
+        return max(1, min(requested, 1000))
+
+    def _append_matching_files(
+        self,
+        results: list,
+        root: str,
+        files: list,
+        pattern: str,
+        max_results: int,
+    ) -> None:
+        for filename in files:
+            if len(results) >= max_results:
+                return
+            if not fnmatch(filename.lower(), pattern.lower()):
+                continue
+
+            full_path = os.path.join(root, filename)
+            if self._is_admin_folder(full_path):
+                continue
+
+            try:
+                stat = os.stat(full_path, follow_symlinks=False)
+            except OSError:
+                continue
+
+            _, extension = os.path.splitext(filename)
+            results.append(
+                {
+                    "path": full_path,
+                    "name": filename,
+                    "extension": extension.lower(),
+                    "size_bytes": int(stat.st_size),
+                    "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                }
+            )
 
     def _folder_validation(self, valid: bool, path: str, message: str) -> Dict[str, Any]:
         return {

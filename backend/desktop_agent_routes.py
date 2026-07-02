@@ -202,3 +202,38 @@ async def read_file(payload: Dict[str, Any] = Body(default_factory=dict)):
     if result.get("message"):
         response["message"] = result.get("message", "")
     return response
+
+
+@router.post("/athena/desktop/search-files")
+async def search_files(payload: Dict[str, Any] = Body(default_factory=dict)):
+    result = desktop_agent.search_files(
+        folder=payload.get("folder", ""),
+        pattern=payload.get("pattern", "*"),
+        recursive=bool(payload.get("recursive", False)),
+        max_results=payload.get("max_results", 100),
+    )
+    status = result.get("status", "failed")
+
+    event_bus.publish(
+        "DesktopFilesSearched",
+        "desktop_agent",
+        {
+            "folder": result.get("folder", ""),
+            "pattern": result.get("pattern", "*"),
+            "recursive": bool(result.get("recursive", False)),
+            "result_count": int(result.get("result_count", 0) or 0),
+            "result": status,
+        },
+    )
+
+    return {
+        "engine": "desktop_agent",
+        "status": status,
+        "folder": result.get("folder", ""),
+        "pattern": result.get("pattern", "*"),
+        "recursive": bool(result.get("recursive", False)),
+        "max_results": int(result.get("max_results", 100) or 100),
+        "result_count": int(result.get("result_count", 0) or 0),
+        "results": result.get("results", []),
+        "message": result.get("message", ""),
+    }
