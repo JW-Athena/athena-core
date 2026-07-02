@@ -14,6 +14,7 @@ from executive_scenarios_engine import ExecutiveScenariosEngine
 from opportunity_scoring_engine import OpportunityScoringEngine
 from risk_register_engine import RiskRegisterEngine
 from athena_clarification_agent import AthenaClarificationAgent
+from athena_decision_engine import AthenaDecisionEngine
 from athena_memory_agent import AthenaMemoryAgent
 from athena_planner import AthenaPlanner
 from athena_reasoning_agent import AthenaReasoningAgent
@@ -39,6 +40,7 @@ memory_agent = AthenaMemoryAgent()
 reasoning_agent = AthenaReasoningAgent()
 clarification_agent = AthenaClarificationAgent()
 workflow_agent = AthenaWorkflowAgent()
+decision_engine = AthenaDecisionEngine()
 task_agent = AthenaTaskAgent()
 
 
@@ -178,6 +180,15 @@ def _analyze_document(
         )
     selected_engines = list(engine_outputs.keys())
     tasks = task_agent.generate(engine_outputs=engine_outputs)
+    decision = decision_engine.decide(
+        plan=plan,
+        memory=memory,
+        reasoning=reasoning,
+        clarification=clarification,
+        workflow_execution=workflow_execution,
+        engine_outputs=engine_outputs,
+        tasks=tasks,
+    )
 
     return {
         "workflow": workflow,
@@ -187,6 +198,7 @@ def _analyze_document(
         "reasoning": reasoning,
         "clarification": clarification,
         "workflow_execution": workflow_execution,
+        "decision": decision,
         "tasks": tasks,
         "brain_summary": _brain_summary(
             workflow=workflow,
