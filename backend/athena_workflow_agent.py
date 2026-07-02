@@ -20,6 +20,61 @@ class AthenaWorkflowAgent:
         "executive_scenarios",
     }
 
+    def file_understanding(self, desktop_agent: Any, reasoning_agent: Any, path: str) -> Dict[str, Any]:
+        steps_completed = []
+
+        try:
+            metadata_result = desktop_agent.file_info(path)
+            if metadata_result.get("status") != "success":
+                return self._workflow_blocked(
+                    step="inspect_metadata",
+                    reason=self._metadata_failure_reason(metadata_result),
+                    message=metadata_result.get("message", "File metadata inspection failed."),
+                )
+            steps_completed.append("inspect_metadata")
+
+            summary_request_result = desktop_agent.request_file_summary(path)
+            if summary_request_result.get("status") != "success":
+                return self._workflow_blocked(
+                    step="request_file_summary",
+                    reason=summary_request_result.get("reason", "request_file_summary_failed"),
+                    message=summary_request_result.get("message", "File summary request preparation failed."),
+                    steps_completed=steps_completed,
+                    file_data=metadata_result.get("file", {}),
+                )
+            steps_completed.append("request_file_summary")
+
+            reasoning_result = reasoning_agent.summarize_file_request(
+                summary_request_result.get("summary_request", {})
+            )
+            if reasoning_result.get("status") != "success":
+                return self._workflow_blocked(
+                    step="summarize_file_request",
+                    reason=reasoning_result.get("reason", "summarize_file_request_failed"),
+                    message=reasoning_result.get("message", "File summary generation failed."),
+                    steps_completed=steps_completed,
+                    file_data=metadata_result.get("file", {}),
+                )
+            steps_completed.append("summarize_file_request")
+
+            return {
+                "status": "success",
+                "workflow": {
+                    "name": "file_understanding",
+                    "steps_completed": steps_completed,
+                    "file": metadata_result.get("file", {}),
+                    "summary": reasoning_result.get("summary", {}),
+                },
+                "message": "File understanding workflow completed.",
+            }
+        except Exception as exc:
+            return self._workflow_blocked(
+                step="workflow",
+                reason="workflow_error",
+                message=f"File understanding workflow failed: {exc}",
+                steps_completed=steps_completed,
+            )
+
     def evaluate(
         self,
         initial_workflow: List[str],
@@ -117,3 +172,30 @@ class AthenaWorkflowAgent:
             "additional_steps": list(additional_steps),
             "execution_summary": execution_summary,
         }
+
+    def _workflow_blocked(
+        self,
+        step: str,
+        reason: str,
+        message: str,
+        steps_completed: List[str] = None,
+        file_data: Dict[str, Any] = None,
+    ) -> Dict[str, Any]:
+        return {
+            "status": "blocked",
+            "step": step,
+            "reason": reason,
+            "workflow": {
+                "name": "file_understanding",
+                "steps_completed": list(steps_completed or []),
+                "file": file_data or {},
+                "summary": {},
+            },
+            "message": message,
+        }
+
+    def _metadata_failure_reason(self, metadata_result: Dict[str, Any]) -> str:
+        message = str(metadata_result.get("message", "")).lower()
+        if any(term in message for term in ["network", "unc", "administrative", "system", "shell", "registry", "control panel"]):
+            return "unsafe_path"
+        return "inspect_metadata_failed"
