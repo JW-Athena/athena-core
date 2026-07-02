@@ -75,6 +75,56 @@ class AthenaDecisionEngine:
             next_workflow="Execution Planning",
         )
 
+    def evaluate_recommendation(self, recommendation: Dict[str, Any]) -> Dict[str, Any]:
+        if not recommendation:
+            return self._recommendation_failure(
+                reason="missing_recommendation",
+                message="Recommendation is required.",
+            )
+        if not isinstance(recommendation, dict):
+            return self._recommendation_failure(
+                reason="invalid_recommendation",
+                message="Recommendation must be an object.",
+            )
+
+        next_step = str(recommendation.get("next_step", "") or "").strip()
+        reason = str(recommendation.get("reason", "") or "").strip()
+        risk = str(recommendation.get("risk", "") or "").strip().lower()
+        requires_approval = bool(recommendation.get("requires_approval", False))
+
+        if not next_step or not risk:
+            return self._recommendation_failure(
+                reason="invalid_recommendation",
+                message="Recommendation must include next_step and risk.",
+            )
+
+        try:
+            if risk == "low" and not requires_approval:
+                outcome = "approved"
+            elif risk == "medium" and not requires_approval:
+                outcome = "conditionally_approved"
+            elif risk == "high" or requires_approval:
+                outcome = "requires_approval"
+            else:
+                outcome = "needs_review"
+
+            return {
+                "status": "success",
+                "decision": {
+                    "outcome": outcome,
+                    "next_step": next_step,
+                    "reason": reason,
+                    "risk": risk,
+                    "requires_approval": requires_approval,
+                },
+                "message": "Planner recommendation evaluated.",
+            }
+        except Exception as exc:
+            return self._recommendation_failure(
+                reason="decision_error",
+                message=f"Decision evaluation failed: {exc}",
+            )
+
     def _decision(
         self,
         status: str,
@@ -312,3 +362,11 @@ class AthenaDecisionEngine:
             if text and text not in deduped:
                 deduped.append(text)
         return deduped
+
+    def _recommendation_failure(self, reason: str, message: str) -> Dict[str, Any]:
+        return {
+            "status": "blocked",
+            "reason": reason,
+            "decision": {},
+            "message": message,
+        }
