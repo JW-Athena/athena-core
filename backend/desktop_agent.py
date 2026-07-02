@@ -380,6 +380,49 @@ class AthenaDesktopAgent:
             "message": "File location opened.",
         }
 
+    def recommend_file_actions(self, path: str) -> Dict[str, Any]:
+        validation = self._inspect_recommendation_target(path)
+        file_data = validation["file"]
+
+        if not validation["valid"]:
+            return {
+                "status": "success",
+                "file": file_data,
+                "recommended_actions": [],
+                "reason": validation["reason"],
+                "message": validation["message"],
+            }
+
+        actions = [
+            self._recommended_action(
+                action="inspect_metadata",
+                endpoint="/athena/desktop/file-info",
+                risk="low",
+            ),
+            self._recommended_action(
+                action="open_file_location",
+                endpoint="/athena/desktop/open-file-location",
+                risk="low",
+            ),
+        ]
+
+        if file_data.get("extension", "").lower() in self.SAFE_TEXT_EXTENSIONS:
+            actions.insert(
+                1,
+                self._recommended_action(
+                    action="read_safe_text",
+                    endpoint="/athena/desktop/read-file",
+                    risk="low",
+                ),
+            )
+
+        return {
+            "status": "success",
+            "file": file_data,
+            "recommended_actions": actions,
+            "message": "File action recommendations prepared.",
+        }
+
     def _validate_folder_path(self, path: str) -> Dict[str, Any]:
         requested_path = str(path or "").strip().strip('"')
         if not requested_path:
@@ -491,6 +534,86 @@ class AthenaDesktopAgent:
 
         return self._location_validation(True, absolute_path, "", "")
 
+    def _inspect_recommendation_target(self, path: str) -> Dict[str, Any]:
+        requested_path = str(path or "").strip().strip('"')
+        if not requested_path:
+            return self._recommendation_validation(
+                False,
+                self._recommendation_file_info(""),
+                "file_not_found",
+                "File path is required.",
+            )
+
+        lowered = requested_path.lower()
+        if requested_path.startswith(("\\\\", "//")):
+            return self._recommendation_validation(
+                False,
+                self._recommendation_file_info(requested_path),
+                "unsafe_path",
+                "Network and UNC paths are not allowed.",
+            )
+        if any(token in lowered for token in ["shell:", "control panel", "::{", "registry", "regedit"]):
+            return self._recommendation_validation(
+                False,
+                self._recommendation_file_info(requested_path),
+                "unsafe_path",
+                "Shell, registry, and Control Panel paths are not allowed.",
+            )
+        if not os.path.isabs(requested_path) or not os.path.splitdrive(requested_path)[0]:
+            return self._recommendation_validation(
+                False,
+                self._recommendation_file_info(requested_path),
+                "unsafe_path",
+                "Only absolute local file paths are allowed.",
+            )
+
+        absolute_path = os.path.abspath(requested_path)
+        if self._is_admin_folder(absolute_path) or self._is_admin_folder(os.path.dirname(absolute_path)):
+            return self._recommendation_validation(
+                False,
+                self._recommendation_file_info(absolute_path),
+                "unsafe_path",
+                "Administrative and system paths are not allowed.",
+            )
+        if not os.path.exists(absolute_path):
+            return self._recommendation_validation(
+                False,
+                self._recommendation_file_info(absolute_path),
+                "file_not_found",
+                "File does not exist.",
+            )
+        if os.path.isdir(absolute_path):
+            return self._recommendation_validation(
+                False,
+                self._recommendation_file_info(absolute_path),
+                "path_is_directory",
+                "Path is a directory, not a file.",
+            )
+        if not os.path.isfile(absolute_path):
+            return self._recommendation_validation(
+                False,
+                self._recommendation_file_info(absolute_path),
+                "file_not_found",
+                "Path is not a regular file.",
+            )
+
+        try:
+            size_bytes = os.path.getsize(absolute_path)
+        except OSError as exc:
+            return self._recommendation_validation(
+                False,
+                self._recommendation_file_info(absolute_path),
+                "metadata_error",
+                f"Failed to inspect file metadata: {exc}",
+            )
+
+        return self._recommendation_validation(
+            True,
+            self._recommendation_file_info(absolute_path, exists=True, size_bytes=size_bytes),
+            "",
+            "",
+        )
+
     def _is_admin_folder(self, path: str) -> bool:
         normalized = os.path.normcase(os.path.abspath(path))
         protected_roots = [
@@ -573,6 +696,20 @@ class AthenaDesktopAgent:
             "message": message,
         }
 
+    def _recommendation_validation(
+        self,
+        valid: bool,
+        file_data: Dict[str, Any],
+        reason: str,
+        message: str,
+    ) -> Dict[str, Any]:
+        return {
+            "valid": valid,
+            "file": file_data,
+            "reason": reason,
+            "message": message,
+        }
+
     def _empty_file_info(self, path: str) -> Dict[str, Any]:
         name = os.path.basename(path) if path else ""
         _, extension = os.path.splitext(name)
@@ -598,6 +735,30 @@ class AthenaDesktopAgent:
             "size_bytes": 0,
             "content": "",
             "truncated": False,
+        }
+
+    def _recommendation_file_info(
+        self,
+        path: str,
+        exists: bool = False,
+        size_bytes: int = 0,
+    ) -> Dict[str, Any]:
+        name = os.path.basename(path) if path else ""
+        _, extension = os.path.splitext(name)
+        return {
+            "path": path,
+            "exists": exists,
+            "name": name,
+            "extension": extension.lower(),
+            "size_bytes": int(size_bytes or 0),
+        }
+
+    def _recommended_action(self, action: str, endpoint: str, risk: str) -> Dict[str, Any]:
+        return {
+            "action": action,
+            "endpoint": endpoint,
+            "requires_approval": False,
+            "risk": risk,
         }
 
     def _is_binary_content(self, content: bytes) -> bool:

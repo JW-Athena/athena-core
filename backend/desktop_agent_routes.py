@@ -278,3 +278,40 @@ async def open_file_location(payload: Dict[str, Any] = Body(default_factory=dict
     if status != "success":
         response["reason"] = result.get("reason", "open_error")
     return response
+
+
+@router.post("/athena/desktop/recommend-file-actions")
+async def recommend_file_actions(payload: Dict[str, Any] = Body(default_factory=dict)):
+    result = desktop_agent.recommend_file_actions(payload.get("path", ""))
+    file_data = result.get("file", {})
+    actions = result.get("recommended_actions", [])
+
+    event_bus.publish(
+        "DesktopFileActionsRecommended",
+        "desktop_agent",
+        {
+            "action": "recommend_file_actions",
+            "path": file_data.get("path", ""),
+            "exists": bool(file_data.get("exists", False)),
+            "recommended_count": len(actions),
+            "result": result.get("status", "success"),
+        },
+    )
+
+    response = {
+        "engine": "desktop_agent",
+        "status": result.get("status", "success"),
+        "file": {
+            "path": file_data.get("path", ""),
+            "exists": bool(file_data.get("exists", False)),
+            "name": file_data.get("name", ""),
+            "extension": file_data.get("extension", ""),
+            "size_bytes": int(file_data.get("size_bytes", 0) or 0),
+        },
+        "recommended_actions": actions,
+    }
+    if result.get("reason"):
+        response["reason"] = result.get("reason")
+    if result.get("message"):
+        response["message"] = result.get("message")
+    return response
