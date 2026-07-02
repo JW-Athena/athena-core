@@ -27,6 +27,7 @@ from risk_register_routes import router as risk_register_router
 from commercial_exposure_routes import router as commercial_exposure_router
 from executive_action_plan_routes import router as executive_action_plan_router
 from opportunity_scoring_routes import router as opportunity_scoring_router
+from executive_dashboard_routes import router as executive_dashboard_router
 from business_memory_routes import router as business_memory_router
 
 from module_registry_routes import router as module_registry_router
@@ -63,6 +64,7 @@ def register_routes(app: FastAPI):
     app.include_router(commercial_exposure_router)
     app.include_router(executive_action_plan_router)
     app.include_router(opportunity_scoring_router)
+    app.include_router(executive_dashboard_router)
     app.include_router(business_memory_router)
 
     app.include_router(module_registry_router)
