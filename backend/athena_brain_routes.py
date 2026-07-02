@@ -13,6 +13,7 @@ from executive_report_engine import ExecutiveReportEngine
 from executive_scenarios_engine import ExecutiveScenariosEngine
 from opportunity_scoring_engine import OpportunityScoringEngine
 from risk_register_engine import RiskRegisterEngine
+from athena_memory_agent import AthenaMemoryAgent
 from athena_planner import AthenaPlanner
 from timing_utils import new_request_context, timed_step
 
@@ -30,6 +31,7 @@ opportunity_engine = OpportunityScoringEngine()
 bid_engine = BidNoBidEngine()
 rag_engine = RAGAnswerEngine()
 planner = AthenaPlanner()
+memory_agent = AthenaMemoryAgent()
 
 
 @router.post("/athena/analyze")
@@ -115,6 +117,12 @@ def _analyze_document(
         document_type=document_type,
         metadata=metadata,
     )
+    memory = memory_agent.evaluate(
+        plan=plan,
+        question=question,
+        document_type=document_type,
+        metadata=metadata,
+    )
     workflow = plan.get("intent", "question_answering")
     engine_outputs = _run_workflow(
         workflow=workflow,
@@ -130,7 +138,7 @@ def _analyze_document(
         "workflow": workflow,
         "question": question or "",
         "document_type": document_type or "",
-        "planning": planner.public_plan(plan),
+        "planning": _planning_with_memory(plan=plan, memory=memory),
         "brain_summary": _brain_summary(
             workflow=workflow,
             document_type=document_type,
@@ -145,6 +153,23 @@ def _analyze_document(
         "selected_engines": selected_engines,
         "engine_outputs": engine_outputs,
     }
+
+
+def _planning_with_memory(
+    plan: Dict[str, Any],
+    memory: Dict[str, Any],
+) -> Dict[str, Any]:
+    public_plan = planner.public_plan(plan)
+    public_plan["memory"] = {
+        "used": bool(memory.get("used", False)),
+        "sources": list(memory.get("sources", [])),
+        "reasoning": memory.get(
+            "reasoning",
+            "No relevant historical context was required.",
+        ),
+    }
+    public_plan["memory_used"] = public_plan["memory"]["used"]
+    return public_plan
 
 
 def _run_workflow(
