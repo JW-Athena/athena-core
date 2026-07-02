@@ -5,6 +5,7 @@ from capability_006_business_intelligence import BusinessIntelligenceEngine
 from document_intelligence_engine import DocumentIntelligenceEngine
 from entity_intelligence_engine import EntityIntelligenceEngine
 from executive_decision_brief_engine import ExecutiveDecisionBriefEngine
+from timing_utils import cached_step, new_request_context, timed_step
 
 
 class RiskRegisterEngine:
@@ -26,26 +27,73 @@ class RiskRegisterEngine:
         self,
         text: str,
         document_type: Optional[str] = None,
+        request_context: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        request_context = new_request_context(request_context)
+
+        return cached_step(
+            request_context=request_context,
+            cache_key="risk_register.generate",
+            engine="risk_register",
+            step="generate",
+            callback=lambda: self._generate_uncached(
+                text=text,
+                document_type=document_type,
+                request_context=request_context,
+            ),
+        )
+
+    def _generate_uncached(
+        self,
+        text: str,
+        document_type: Optional[str],
+        request_context: Dict[str, Any],
     ) -> Dict[str, Any]:
         brief_result = self.brief_engine.generate(
             text=text,
             document_type=document_type,
+            request_context=request_context,
         )
-        business = self.business_engine.analyze(
-            text=text,
-            document_type=document_type,
+        source = brief_result.get("source_intelligence", {})
+        business = source.get("business_intelligence") or cached_step(
+            request_context=request_context,
+            cache_key="business_intelligence.analyze",
+            engine="business_intelligence",
+            step="analyze",
+            callback=lambda: self.business_engine.analyze(
+                text=text,
+                document_type=document_type,
+            ),
         )
-        obligations = self.obligation_engine.extract(
-            text=text,
-            document_type=document_type,
+        obligations = source.get("obligation_extraction") or cached_step(
+            request_context=request_context,
+            cache_key="obligation_extraction.extract",
+            engine="obligation_extraction",
+            step="extract",
+            callback=lambda: self.obligation_engine.extract(
+                text=text,
+                document_type=document_type,
+            ),
         )
-        document = self.document_engine.analyze(
-            text=text,
-            document_type=document_type,
+        document = cached_step(
+            request_context=request_context,
+            cache_key="document_intelligence.analyze",
+            engine="document_intelligence",
+            step="analyze",
+            callback=lambda: self.document_engine.analyze(
+                text=text,
+                document_type=document_type,
+            ),
         )
-        entities = self.entity_engine.extract(
-            text=text,
-            document_type=document_type,
+        entities = cached_step(
+            request_context=request_context,
+            cache_key="entity_intelligence.extract",
+            engine="entity_intelligence",
+            step="extract",
+            callback=lambda: self.entity_engine.extract(
+                text=text,
+                document_type=document_type,
+            ),
         )
 
         risks = []
@@ -65,7 +113,7 @@ class RiskRegisterEngine:
 
         counts = self._severity_counts(risks)
 
-        return {
+        result = {
             "engine": "risk_register",
             "name": "Risk Register Intelligence",
             "status": "success",
@@ -78,6 +126,13 @@ class RiskRegisterEngine:
                 "risks": risks,
             },
         }
+        timed_step(
+            request_context=request_context,
+            engine="risk_register",
+            step="assemble",
+            callback=lambda: None,
+        )
+        return result
 
     def _add_business_risks(self, risks: List[Dict], business: Dict[str, Any]) -> None:
         for item in business.get("key_risks", []):

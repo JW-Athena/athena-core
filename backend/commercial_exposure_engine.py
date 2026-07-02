@@ -5,6 +5,7 @@ from capability_005_obligation_extraction import ObligationExtractor
 from capability_006_business_intelligence import BusinessIntelligenceEngine
 from executive_decision_brief_engine import ExecutiveDecisionBriefEngine
 from risk_register_engine import RiskRegisterEngine
+from timing_utils import cached_step, new_request_context, timed_step
 
 
 class CommercialExposureEngine:
@@ -26,26 +27,63 @@ class CommercialExposureEngine:
         self,
         text: str,
         document_type: Optional[str] = None,
+        request_context: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        request_context = new_request_context(request_context)
+
+        return cached_step(
+            request_context=request_context,
+            cache_key="commercial_exposure.analyze",
+            engine="commercial_exposure",
+            step="analyze",
+            callback=lambda: self._analyze_uncached(
+                text=text,
+                document_type=document_type,
+                request_context=request_context,
+            ),
+        )
+
+    def _analyze_uncached(
+        self,
+        text: str,
+        document_type: Optional[str],
+        request_context: Dict[str, Any],
     ) -> Dict[str, Any]:
         brief_result = self.brief_engine.generate(
             text=text,
             document_type=document_type,
+            request_context=request_context,
         )
         bid_result = self.bid_engine.evaluate(
             text=text,
             document_type=document_type,
+            request_context=request_context,
         )
         risk_result = self.risk_register_engine.generate(
             text=text,
             document_type=document_type,
+            request_context=request_context,
         )
-        business = self.business_engine.analyze(
-            text=text,
-            document_type=document_type,
+        source = brief_result.get("source_intelligence", {})
+        business = source.get("business_intelligence") or cached_step(
+            request_context=request_context,
+            cache_key="business_intelligence.analyze",
+            engine="business_intelligence",
+            step="analyze",
+            callback=lambda: self.business_engine.analyze(
+                text=text,
+                document_type=document_type,
+            ),
         )
-        obligations = self.obligation_engine.extract(
-            text=text,
-            document_type=document_type,
+        obligations = source.get("obligation_extraction") or cached_step(
+            request_context=request_context,
+            cache_key="obligation_extraction.extract",
+            engine="obligation_extraction",
+            step="extract",
+            callback=lambda: self.obligation_engine.extract(
+                text=text,
+                document_type=document_type,
+            ),
         )
 
         brief = brief_result.get("brief", {})
@@ -95,7 +133,7 @@ class CommercialExposureEngine:
             brief=brief,
         )
 
-        return {
+        result = {
             "engine": "commercial_exposure",
             "name": "Commercial Exposure Intelligence",
             "status": "success",
@@ -136,6 +174,13 @@ class CommercialExposureEngine:
                 ),
             },
         }
+        timed_step(
+            request_context=request_context,
+            engine="commercial_exposure",
+            step="assemble",
+            callback=lambda: None,
+        )
+        return result
 
     def _first_value(self, *values):
         for value in values:

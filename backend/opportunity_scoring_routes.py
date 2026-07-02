@@ -3,20 +3,20 @@ import time
 
 from fastapi import APIRouter, File, Form, UploadFile
 
-from risk_register_engine import RiskRegisterEngine
+from opportunity_scoring_engine import OpportunityScoringEngine
 from timing_utils import new_request_context
 
 
 router = APIRouter(
-    prefix="/risk-register",
-    tags=["Risk Register Intelligence"],
+    prefix="/opportunity-score",
+    tags=["Opportunity Scoring Intelligence"],
 )
 
-engine = RiskRegisterEngine()
+engine = OpportunityScoringEngine()
 
 
-@router.post("/generate")
-async def generate_risk_register(
+@router.post("/evaluate")
+async def evaluate_opportunity_score(
     file: UploadFile = File(...),
     document_type: Optional[str] = Form(default=None),
 ):
@@ -24,7 +24,7 @@ async def generate_risk_register(
     started = time.perf_counter()
     content = await file.read()
     print(
-        "[timing] engine=risk_register_route "
+        "[timing] engine=opportunity_scoring_route "
         f"step=file_read elapsed_ms={round((time.perf_counter() - started) * 1000, 2)}"
     )
 
@@ -34,18 +34,18 @@ async def generate_risk_register(
     except Exception:
         text = str(content)
     print(
-        "[timing] engine=risk_register_route "
+        "[timing] engine=opportunity_scoring_route "
         f"step=text_decode elapsed_ms={round((time.perf_counter() - started) * 1000, 2)}"
     )
 
-    result = engine.generate(
+    result = engine.evaluate(
         text=text,
         document_type=document_type,
         request_context=request_context,
     )
 
     return {
-        "engine": "risk_register",
+        "engine": "opportunity_scoring",
         "status": "success",
-        "risk_register": result.get("risk_register", {}),
+        "opportunity_score": result.get("opportunity_score", {}),
     }

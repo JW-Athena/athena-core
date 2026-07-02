@@ -1,6 +1,7 @@
 from typing import Any, Dict, List, Optional
 
 from executive_decision_brief_engine import ExecutiveDecisionBriefEngine
+from timing_utils import cached_step, new_request_context, timed_step
 
 
 class BidNoBidEngine:
@@ -17,10 +18,32 @@ class BidNoBidEngine:
         self,
         text: str,
         document_type: Optional[str] = None,
+        request_context: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        request_context = new_request_context(request_context)
+
+        return cached_step(
+            request_context=request_context,
+            cache_key="bid_no_bid.evaluate",
+            engine="bid_no_bid",
+            step="evaluate",
+            callback=lambda: self._evaluate_uncached(
+                text=text,
+                document_type=document_type,
+                request_context=request_context,
+            ),
+        )
+
+    def _evaluate_uncached(
+        self,
+        text: str,
+        document_type: Optional[str],
+        request_context: Dict[str, Any],
     ) -> Dict[str, Any]:
         brief_result = self.brief_engine.generate(
             text=text,
             document_type=document_type,
+            request_context=request_context,
         )
         brief = brief_result.get("brief", {})
 
@@ -75,7 +98,7 @@ class BidNoBidEngine:
                 required_actions,
             )
 
-        return {
+        result = {
             "engine": "bid_no_bid",
             "name": "Bid / No-Bid Intelligence",
             "status": "success",
@@ -92,6 +115,13 @@ class BidNoBidEngine:
             },
             "executive_brief": brief,
         }
+        timed_step(
+            request_context=request_context,
+            engine="bid_no_bid",
+            step="assemble",
+            callback=lambda: None,
+        )
+        return result
 
     def _apply_blockers(
         self,

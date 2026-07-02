@@ -7,6 +7,7 @@ from commercial_exposure_engine import CommercialExposureEngine
 from executive_decision_brief_engine import ExecutiveDecisionBriefEngine
 from executive_decision_engine import ExecutiveDecisionEngine
 from risk_register_engine import RiskRegisterEngine
+from timing_utils import cached_step, new_request_context, timed_step
 
 
 class ExecutiveActionPlanEngine:
@@ -30,22 +31,47 @@ class ExecutiveActionPlanEngine:
         self,
         text: str,
         document_type: Optional[str] = None,
+        request_context: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        request_context = new_request_context(request_context)
+
+        return cached_step(
+            request_context=request_context,
+            cache_key="executive_action_plan.generate",
+            engine="executive_action_plan",
+            step="generate",
+            callback=lambda: self._generate_uncached(
+                text=text,
+                document_type=document_type,
+                request_context=request_context,
+            ),
+        )
+
+    def _generate_uncached(
+        self,
+        text: str,
+        document_type: Optional[str],
+        request_context: Dict[str, Any],
     ) -> Dict[str, Any]:
         brief_result = self.brief_engine.generate(
             text=text,
             document_type=document_type,
+            request_context=request_context,
         )
         bid_result = self.bid_engine.evaluate(
             text=text,
             document_type=document_type,
+            request_context=request_context,
         )
         risk_result = self.risk_register_engine.generate(
             text=text,
             document_type=document_type,
+            request_context=request_context,
         )
         commercial_result = self.commercial_exposure_engine.analyze(
             text=text,
             document_type=document_type,
+            request_context=request_context,
         )
 
         brief = brief_result.get("brief", {})
@@ -80,7 +106,7 @@ class ExecutiveActionPlanEngine:
             decision=decision,
         )
 
-        return {
+        result = {
             "engine": "executive_action_plan",
             "name": "Executive Action Plan Intelligence",
             "status": "success",
@@ -99,6 +125,13 @@ class ExecutiveActionPlanEngine:
                 ),
             },
         }
+        timed_step(
+            request_context=request_context,
+            engine="executive_action_plan",
+            step="assemble",
+            callback=lambda: None,
+        )
+        return result
 
     def _add_commercial_actions(
         self,

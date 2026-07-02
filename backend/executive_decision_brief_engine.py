@@ -3,6 +3,7 @@ from typing import Any, Dict, List, Optional
 from capability_004_executive_extraction import ExecutiveInformationExtractor
 from capability_005_obligation_extraction import ObligationExtractor
 from capability_006_business_intelligence import BusinessIntelligenceEngine
+from timing_utils import cached_step, new_request_context, timed_step
 
 
 class ExecutiveDecisionBriefEngine:
@@ -22,21 +23,60 @@ class ExecutiveDecisionBriefEngine:
         self,
         text: str,
         document_type: Optional[str] = None,
+        request_context: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        business = self.business_engine.analyze(
-            text=text,
-            document_type=document_type,
-        )
-        obligations = self.obligation_engine.extract(
-            text=text,
-            document_type=document_type,
-        )
-        executive = self.executive_extractor.extract(
-            text=text,
-            document_type=document_type,
+        request_context = new_request_context(request_context)
+
+        return cached_step(
+            request_context=request_context,
+            cache_key="executive_decision_brief.generate",
+            engine="executive_decision_brief",
+            step="generate",
+            callback=lambda: self._generate_uncached(
+                text=text,
+                document_type=document_type,
+                request_context=request_context,
+            ),
         )
 
-        return {
+    def _generate_uncached(
+        self,
+        text: str,
+        document_type: Optional[str],
+        request_context: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        business = cached_step(
+            request_context=request_context,
+            cache_key="business_intelligence.analyze",
+            engine="business_intelligence",
+            step="analyze",
+            callback=lambda: self.business_engine.analyze(
+                text=text,
+                document_type=document_type,
+            ),
+        )
+        obligations = cached_step(
+            request_context=request_context,
+            cache_key="obligation_extraction.extract",
+            engine="obligation_extraction",
+            step="extract",
+            callback=lambda: self.obligation_engine.extract(
+                text=text,
+                document_type=document_type,
+            ),
+        )
+        executive = cached_step(
+            request_context=request_context,
+            cache_key="executive_information.extract",
+            engine="executive_information",
+            step="extract",
+            callback=lambda: self.executive_extractor.extract(
+                text=text,
+                document_type=document_type,
+            ),
+        )
+
+        result = {
             "engine": "executive_decision_brief",
             "name": "Executive Decision Brief Engine",
             "document_type": self._first_value(
@@ -110,6 +150,13 @@ class ExecutiveDecisionBriefEngine:
                 "executive_information": executive,
             },
         }
+        timed_step(
+            request_context=request_context,
+            engine="executive_decision_brief",
+            step="assemble",
+            callback=lambda: None,
+        )
+        return result
 
     def _first_value(self, *values):
         for value in values:
