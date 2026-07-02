@@ -17,6 +17,7 @@ from athena_clarification_agent import AthenaClarificationAgent
 from athena_memory_agent import AthenaMemoryAgent
 from athena_planner import AthenaPlanner
 from athena_reasoning_agent import AthenaReasoningAgent
+from athena_workflow_agent import AthenaWorkflowAgent
 from timing_utils import new_request_context, timed_step
 
 
@@ -36,6 +37,7 @@ planner = AthenaPlanner()
 memory_agent = AthenaMemoryAgent()
 reasoning_agent = AthenaReasoningAgent()
 clarification_agent = AthenaClarificationAgent()
+workflow_agent = AthenaWorkflowAgent()
 
 
 @router.post("/athena/analyze")
@@ -140,14 +142,38 @@ def _analyze_document(
         question=question,
     )
     workflow = plan.get("intent", "question_answering")
-    engine_outputs = _run_workflow(
-        workflow=workflow,
+    initial_workflow = list(plan.get("workflow", []))
+    engine_outputs = _run_workflow_steps(
+        workflow_steps=initial_workflow,
         text=text,
         document_type=document_type,
         question=question,
         limit=limit,
         request_context=request_context,
     )
+    workflow_execution = workflow_agent.evaluate(
+        initial_workflow=initial_workflow,
+        engine_outputs=engine_outputs,
+        reasoning=reasoning,
+        clarification=clarification,
+    )
+    additional_steps = list(workflow_execution.get("additional_steps", []))[:1]
+    if additional_steps:
+        _run_workflow_steps(
+            workflow_steps=additional_steps,
+            text=text,
+            document_type=document_type,
+            question=question,
+            limit=limit,
+            request_context=request_context,
+            outputs=engine_outputs,
+        )
+        workflow_execution = workflow_agent.after_execution(
+            initial_workflow=initial_workflow,
+            engine_outputs=engine_outputs,
+            additional_steps=additional_steps,
+            execution_summary=workflow_execution.get("execution_summary", ""),
+        )
     selected_engines = list(engine_outputs.keys())
 
     return {
@@ -157,6 +183,7 @@ def _analyze_document(
         "planning": _planning_with_memory(plan=plan, memory=memory),
         "reasoning": reasoning,
         "clarification": clarification,
+        "workflow_execution": workflow_execution,
         "brain_summary": _brain_summary(
             workflow=workflow,
             document_type=document_type,
@@ -190,30 +217,46 @@ def _planning_with_memory(
     return public_plan
 
 
-def _run_workflow(
-    workflow: str,
+def _run_workflow_steps(
+    workflow_steps: list,
     text: str,
     document_type: Optional[str],
     question: Optional[str],
     limit: int,
     request_context: Dict[str, Any],
+    outputs: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    outputs = {}
-
-    if workflow == "executive_document_analysis":
-        _add_output(
-            outputs,
-            "executive_dashboard",
-            _safe_call(
-                "executive_dashboard",
-                lambda: dashboard_engine.analyze(
-                    text=text,
-                    document_type=document_type,
-                    request_context=request_context,
-                ),
-                request_context,
-            ).get("executive_dashboard", {}),
+    outputs = outputs if outputs is not None else {}
+    for step in workflow_steps:
+        _run_workflow_step(
+            step=step,
+            outputs=outputs,
+            text=text,
+            document_type=document_type,
+            question=question,
+            limit=limit,
+            request_context=request_context,
         )
+    return outputs
+
+
+def _run_workflow_step(
+    step: str,
+    outputs: Dict[str, Any],
+    text: str,
+    document_type: Optional[str],
+    question: Optional[str],
+    limit: int,
+    request_context: Dict[str, Any],
+) -> None:
+    if step in outputs:
+        return
+
+    if step == "executive_dashboard":
+        _add_dashboard(outputs, text, document_type, request_context)
+        return
+
+    if step == "executive_report":
         _add_output(
             outputs,
             "executive_report",
@@ -227,9 +270,9 @@ def _run_workflow(
                 request_context,
             ).get("executive_report", {}),
         )
-        return outputs
+        return
 
-    if workflow == "contract_review":
+    if step == "contract_intelligence":
         _add_output(
             outputs,
             "contract_intelligence",
@@ -243,10 +286,9 @@ def _run_workflow(
                 request_context,
             ).get("contract_intelligence", {}),
         )
-        _add_dashboard(outputs, text, document_type, request_context)
-        return outputs
+        return
 
-    if workflow == "risk_review":
+    if step == "risk_register":
         _add_output(
             outputs,
             "risk_register",
@@ -260,10 +302,9 @@ def _run_workflow(
                 request_context,
             ).get("risk_register", {}),
         )
-        _add_dashboard(outputs, text, document_type, request_context)
-        return outputs
+        return
 
-    if workflow == "commercial_review":
+    if step == "commercial_exposure":
         _add_output(
             outputs,
             "commercial_exposure",
@@ -277,10 +318,9 @@ def _run_workflow(
                 request_context,
             ).get("commercial_exposure", {}),
         )
-        _add_dashboard(outputs, text, document_type, request_context)
-        return outputs
+        return
 
-    if workflow == "opportunity_assessment":
+    if step == "opportunity_scoring":
         _add_output(
             outputs,
             "opportunity_scoring",
@@ -294,6 +334,9 @@ def _run_workflow(
                 request_context,
             ).get("opportunity_score", {}),
         )
+        return
+
+    if step == "bid_no_bid":
         _add_output(
             outputs,
             "bid_no_bid",
@@ -307,10 +350,9 @@ def _run_workflow(
                 request_context,
             ).get("decision", {}),
         )
-        _add_dashboard(outputs, text, document_type, request_context)
-        return outputs
+        return
 
-    if workflow == "scenario_analysis":
+    if step == "executive_scenarios":
         _add_output(
             outputs,
             "executive_scenarios",
@@ -324,27 +366,10 @@ def _run_workflow(
                 request_context,
             ).get("scenario_analysis", {}),
         )
-        _add_dashboard(outputs, text, document_type, request_context)
-        return outputs
+        return
 
-    if workflow == "report_generation":
+    if step == "rag_answer":
         _add_output(
-            outputs,
-            "executive_report",
-            _safe_call(
-                "executive_report",
-                lambda: report_engine.generate(
-                    text=text,
-                    document_type=document_type,
-                    request_context=request_context,
-                ),
-                request_context,
-            ).get("executive_report", {}),
-        )
-        _add_dashboard(outputs, text, document_type, request_context)
-        return outputs
-
-    _add_output(
         outputs,
         "rag_answer",
         _safe_call(
@@ -355,8 +380,7 @@ def _run_workflow(
             ),
             request_context,
         ),
-    )
-    return outputs
+        )
 
 
 def _add_dashboard(
