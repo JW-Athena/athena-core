@@ -14,6 +14,7 @@ from executive_scenarios_engine import ExecutiveScenariosEngine
 from opportunity_scoring_engine import OpportunityScoringEngine
 from risk_register_engine import RiskRegisterEngine
 from agent_registry import agent_registry
+from organization_awareness import organization_awareness
 from timing_utils import new_request_context, timed_step
 
 
@@ -221,6 +222,13 @@ def _analyze_document(
         notifications=notifications,
         approval=approval,
     )
+    organization_state = organization_awareness.update_from_analysis(
+        decision=decision,
+        tasks=tasks,
+        notifications=notifications,
+        execution=execution,
+        engine_outputs=engine_outputs,
+    )
 
     return {
         "workflow": workflow,
@@ -236,6 +244,7 @@ def _analyze_document(
         "approval": approval,
         "execution": execution,
         "action_plan": action_plan,
+        "organization_state": organization_state,
         "brain_summary": _brain_summary(
             workflow=workflow,
             document_type=document_type,
