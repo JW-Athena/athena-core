@@ -36,6 +36,7 @@ clarification_agent = agent_registry.create_agent("clarification_agent")
 workflow_agent = agent_registry.create_agent("workflow_agent")
 decision_engine = agent_registry.create_agent("decision_engine")
 task_agent = agent_registry.create_agent("task_agent")
+notification_agent = agent_registry.create_agent("notification_agent")
 
 
 @router.get("/athena/agents")
@@ -192,6 +193,11 @@ def _analyze_document(
         engine_outputs=engine_outputs,
         tasks=tasks,
     )
+    notifications = notification_agent.generate(
+        decision=decision,
+        tasks=tasks,
+        engine_outputs=engine_outputs,
+    )
 
     return {
         "workflow": workflow,
@@ -203,6 +209,7 @@ def _analyze_document(
         "workflow_execution": workflow_execution,
         "decision": decision,
         "tasks": tasks,
+        "notifications": notifications,
         "brain_summary": _brain_summary(
             workflow=workflow,
             document_type=document_type,

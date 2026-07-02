@@ -3,6 +3,7 @@ from typing import Any, Callable, Dict, List
 from athena_clarification_agent import AthenaClarificationAgent
 from athena_decision_engine import AthenaDecisionEngine
 from athena_memory_agent import AthenaMemoryAgent
+from athena_notification_agent import AthenaNotificationAgent
 from athena_planner import AthenaPlanner
 from athena_reasoning_agent import AthenaReasoningAgent
 from athena_task_agent import AthenaTaskAgent
@@ -113,6 +114,18 @@ class AgentRegistry:
                 "outputs": ["tasks"],
                 "depends_on": ["workflow_agent"],
                 "factory": AthenaTaskAgent,
+            },
+            "notification_agent": {
+                "id": "notification_agent",
+                "name": "Notification Agent",
+                "version": "1.0",
+                "enabled": True,
+                "type": "communication",
+                "description": "Creates structured notification plans from ATHENA findings.",
+                "inputs": ["decision", "tasks", "engine_outputs"],
+                "outputs": ["notifications"],
+                "depends_on": ["decision_engine", "task_agent"],
+                "factory": AthenaNotificationAgent,
             },
         }
 
