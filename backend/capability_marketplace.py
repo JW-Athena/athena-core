@@ -188,6 +188,17 @@ class CapabilityMarketplace:
                 "execution_supported": False,
             },
             {
+                "id": "desktop_control",
+                "name": "Desktop Agent",
+                "category": "Execution",
+                "version": "1.0",
+                "enabled": True,
+                "description": "Registers planning-only desktop actions without mouse, keyboard, or application automation.",
+                "required_agents": ["desktop_agent", "approval_agent", "execution_agent"],
+                "requires_approval": True,
+                "execution_supported": False,
+            },
+            {
                 "id": "organization_awareness",
                 "name": "Organization Awareness",
                 "category": "Organizational Intelligence",

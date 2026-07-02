@@ -12,6 +12,7 @@ from athena_planner import AthenaPlanner
 from athena_reasoning_agent import AthenaReasoningAgent
 from athena_task_agent import AthenaTaskAgent
 from athena_workflow_agent import AthenaWorkflowAgent
+from desktop_agent import AthenaDesktopAgent
 
 
 class AgentRegistry:
@@ -178,6 +179,18 @@ class AgentRegistry:
                 "outputs": ["browser_plan"],
                 "depends_on": ["action_planner"],
                 "factory": AthenaBrowserAgent,
+            },
+            "desktop_agent": {
+                "id": "desktop_agent",
+                "name": "Desktop Agent",
+                "version": "1.0",
+                "enabled": True,
+                "type": "desktop",
+                "description": "Provides planning-only desktop execution capability with execution disabled by default.",
+                "inputs": ["approval", "execution"],
+                "outputs": ["desktop_status"],
+                "depends_on": ["approval_agent", "execution_agent"],
+                "factory": AthenaDesktopAgent,
             },
         }
 
