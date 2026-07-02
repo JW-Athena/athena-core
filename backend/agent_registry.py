@@ -2,6 +2,7 @@ from typing import Any, Callable, Dict, List
 
 from athena_action_planner import AthenaActionPlanner
 from athena_approval_agent import AthenaApprovalAgent
+from athena_browser_agent import AthenaBrowserAgent
 from athena_clarification_agent import AthenaClarificationAgent
 from athena_decision_engine import AthenaDecisionEngine
 from athena_execution_agent import AthenaExecutionAgent
@@ -165,6 +166,18 @@ class AgentRegistry:
                 "outputs": ["action_plan"],
                 "depends_on": ["execution_agent", "approval_agent"],
                 "factory": AthenaActionPlanner,
+            },
+            "browser_agent": {
+                "id": "browser_agent",
+                "name": "Browser Agent",
+                "version": "1.0",
+                "enabled": True,
+                "type": "browser",
+                "description": "Plans browser operations in simulation mode without controlling a browser.",
+                "inputs": ["action_plan", "execution", "decision"],
+                "outputs": ["browser_plan"],
+                "depends_on": ["action_planner"],
+                "factory": AthenaBrowserAgent,
             },
         }
 
