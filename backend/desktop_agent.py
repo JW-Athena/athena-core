@@ -423,6 +423,71 @@ class AthenaDesktopAgent:
             "message": "File action recommendations prepared.",
         }
 
+    def request_file_summary(self, path: str) -> Dict[str, Any]:
+        validation = self._validate_summary_file(path)
+        if not validation["valid"]:
+            return {
+                "status": "blocked",
+                "reason": validation["reason"],
+                "summary_request": self._empty_summary_request(validation["path"]),
+                "message": validation["message"],
+            }
+
+        safe_path = validation["path"]
+        try:
+            with open(safe_path, "rb") as handle:
+                raw_content = handle.read(self.MAX_SAFE_TEXT_BYTES + 1)
+        except Exception as exc:
+            return {
+                "status": "blocked",
+                "reason": "read_error",
+                "summary_request": self._empty_summary_request(safe_path),
+                "message": f"Failed to read file safely: {exc}",
+            }
+
+        if self._is_binary_content(raw_content):
+            return {
+                "status": "blocked",
+                "reason": "binary_file_detected",
+                "summary_request": self._empty_summary_request(safe_path),
+                "message": "Binary file content was detected.",
+            }
+
+        try:
+            content = self._decode_text(raw_content)
+        except UnicodeDecodeError:
+            return {
+                "status": "blocked",
+                "reason": "binary_file_detected",
+                "summary_request": self._empty_summary_request(safe_path),
+                "message": "File could not be decoded as safe text.",
+            }
+        except Exception as exc:
+            return {
+                "status": "blocked",
+                "reason": "read_error",
+                "summary_request": self._empty_summary_request(safe_path),
+                "message": f"Failed to decode file safely: {exc}",
+            }
+
+        stat = os.stat(safe_path, follow_symlinks=False)
+        name = os.path.basename(safe_path)
+        _, extension = os.path.splitext(name)
+
+        return {
+            "status": "success",
+            "summary_request": {
+                "path": safe_path,
+                "name": name,
+                "extension": extension.lower(),
+                "size_bytes": int(stat.st_size),
+                "content_preview": content[:1000],
+                "content_length": len(content),
+                "ready_for_reasoning": True,
+            },
+            "message": "File summary request prepared.",
+        }
+
     def _validate_folder_path(self, path: str) -> Dict[str, Any]:
         requested_path = str(path or "").strip().strip('"')
         if not requested_path:
@@ -503,6 +568,43 @@ class AthenaDesktopAgent:
 
         if size_bytes > self.MAX_SAFE_TEXT_BYTES:
             return self._read_validation(False, absolute_path, "file_too_large", "File exceeds the 1 MB safe read limit.")
+
+        return self._read_validation(True, absolute_path, "", "")
+
+    def _validate_summary_file(self, path: str) -> Dict[str, Any]:
+        requested_path = str(path or "").strip().strip('"')
+        if not requested_path:
+            return self._read_validation(False, "", "file_not_found", "File path is required.")
+
+        lowered = requested_path.lower()
+        if requested_path.startswith(("\\\\", "//")):
+            return self._read_validation(False, requested_path, "unsafe_path", "Network and UNC paths are not allowed.")
+        if any(token in lowered for token in ["shell:", "control panel", "::{", "registry", "regedit"]):
+            return self._read_validation(False, requested_path, "unsafe_path", "Shell, registry, and Control Panel paths are not allowed.")
+        if not os.path.isabs(requested_path) or not os.path.splitdrive(requested_path)[0]:
+            return self._read_validation(False, requested_path, "unsafe_path", "Only absolute local file paths are allowed.")
+
+        absolute_path = os.path.abspath(requested_path)
+        if self._is_admin_folder(absolute_path):
+            return self._read_validation(False, absolute_path, "unsafe_path", "Administrative and system paths are not allowed.")
+        if not os.path.exists(absolute_path):
+            return self._read_validation(False, absolute_path, "file_not_found", "File does not exist.")
+        if os.path.isdir(absolute_path):
+            return self._read_validation(False, absolute_path, "read_error", "Folders cannot be summarized as files.")
+        if not os.path.isfile(absolute_path):
+            return self._read_validation(False, absolute_path, "file_not_found", "Path is not a regular file.")
+
+        _, extension = os.path.splitext(absolute_path)
+        if extension.lower() not in self.SAFE_TEXT_EXTENSIONS:
+            return self._read_validation(False, absolute_path, "unsupported_file_type", "File type is not allowed for summary preparation.")
+
+        try:
+            size_bytes = os.path.getsize(absolute_path)
+        except OSError as exc:
+            return self._read_validation(False, absolute_path, "read_error", f"Failed to inspect file size: {exc}")
+
+        if size_bytes > self.MAX_SAFE_TEXT_BYTES:
+            return self._read_validation(False, absolute_path, "file_too_large", "File exceeds the 1 MB safe summary limit.")
 
         return self._read_validation(True, absolute_path, "", "")
 
@@ -735,6 +837,19 @@ class AthenaDesktopAgent:
             "size_bytes": 0,
             "content": "",
             "truncated": False,
+        }
+
+    def _empty_summary_request(self, path: str) -> Dict[str, Any]:
+        name = os.path.basename(path) if path else ""
+        _, extension = os.path.splitext(name)
+        return {
+            "path": path,
+            "name": name,
+            "extension": extension.lower(),
+            "size_bytes": 0,
+            "content_preview": "",
+            "content_length": 0,
+            "ready_for_reasoning": False,
         }
 
     def _recommendation_file_info(

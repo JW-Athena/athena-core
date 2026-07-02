@@ -315,3 +315,51 @@ async def recommend_file_actions(payload: Dict[str, Any] = Body(default_factory=
     if result.get("message"):
         response["message"] = result.get("message")
     return response
+
+
+@router.post("/athena/desktop/request-file-summary")
+async def request_file_summary(payload: Dict[str, Any] = Body(default_factory=dict)):
+    result = desktop_agent.request_file_summary(payload.get("path", ""))
+    status = result.get("status", "blocked")
+    summary_request = result.get("summary_request", {})
+
+    if status == "success":
+        event_bus.publish(
+            "DesktopFileSummaryRequested",
+            "desktop_agent",
+            {
+                "action": "request_file_summary",
+                "path": summary_request.get("path", ""),
+                "result": "success",
+                "ready_for_reasoning": bool(summary_request.get("ready_for_reasoning", False)),
+            },
+        )
+    else:
+        event_bus.publish(
+            "DesktopActionFailed",
+            "desktop_agent",
+            {
+                "action": "request_file_summary",
+                "path": summary_request.get("path", ""),
+                "result": "failed",
+                "reason": result.get("reason", "read_error"),
+            },
+        )
+
+    response = {
+        "engine": "desktop_agent",
+        "status": status,
+        "summary_request": {
+            "path": summary_request.get("path", ""),
+            "name": summary_request.get("name", ""),
+            "extension": summary_request.get("extension", ""),
+            "size_bytes": int(summary_request.get("size_bytes", 0) or 0),
+            "content_preview": summary_request.get("content_preview", ""),
+            "content_length": int(summary_request.get("content_length", 0) or 0),
+            "ready_for_reasoning": bool(summary_request.get("ready_for_reasoning", False)),
+        },
+        "message": result.get("message", ""),
+    }
+    if status != "success":
+        response["reason"] = result.get("reason", "read_error")
+    return response
