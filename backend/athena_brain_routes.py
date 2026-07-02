@@ -15,6 +15,7 @@ from opportunity_scoring_engine import OpportunityScoringEngine
 from risk_register_engine import RiskRegisterEngine
 from agent_registry import agent_registry
 from capability_marketplace import capability_marketplace
+from event_bus import event_bus
 from organization_awareness import organization_awareness
 from organizational_knowledge_graph import organizational_knowledge_graph
 from timing_utils import new_request_context, timed_step
@@ -250,6 +251,19 @@ def _analyze_document(
         browser_plan=browser_plan,
         engine_outputs=engine_outputs,
     )
+    _publish_analysis_events(
+        workflow=workflow,
+        document_type=document_type,
+        metadata=metadata,
+        selected_engines=selected_engines,
+        decision=decision,
+        tasks=tasks,
+        notifications=notifications,
+        approval=approval,
+        execution=execution,
+        organization_state=organization_state,
+        knowledge_graph=knowledge_graph,
+    )
 
     return {
         "workflow": workflow,
@@ -282,6 +296,125 @@ def _analyze_document(
         "selected_engines": selected_engines,
         "engine_outputs": engine_outputs,
     }
+
+
+def _publish_analysis_events(
+    workflow: str,
+    document_type: Optional[str],
+    metadata: Dict[str, Any],
+    selected_engines: list,
+    decision: Dict[str, Any],
+    tasks: Dict[str, Any],
+    notifications: Dict[str, Any],
+    approval: Dict[str, Any],
+    execution: Dict[str, Any],
+    organization_state: Dict[str, Any],
+    knowledge_graph: Dict[str, Any],
+) -> None:
+    published = set()
+
+    def publish_once(event_type: str, source: str, payload: Dict[str, Any]) -> None:
+        if event_type in published:
+            return
+        event_bus.publish(event_type, source, payload)
+        published.add(event_type)
+
+    document_payload = {
+        "workflow": workflow,
+        "document_type": document_type or "",
+        "document_name": metadata.get("filename", ""),
+        "selected_engines": selected_engines,
+    }
+    publish_once("DocumentAnalyzed", "athena_brain", document_payload)
+
+    publish_once(
+        "DecisionCreated",
+        "decision_engine",
+        {
+            "status": decision.get("status", ""),
+            "confidence": decision.get("confidence", ""),
+            "decision_owner": decision.get("decision_owner", ""),
+        },
+    )
+
+    task_items = tasks.get("items", []) or []
+    publish_once(
+        "TaskCreated",
+        "task_agent",
+        {
+            "count": len(task_items),
+            "critical": tasks.get("critical", 0),
+            "high": tasks.get("high", 0),
+            "medium": tasks.get("medium", 0),
+            "low": tasks.get("low", 0),
+            "items": [
+                {
+                    "id": task.get("id", ""),
+                    "priority": task.get("priority", ""),
+                    "title": task.get("title", ""),
+                    "owner": task.get("owner", ""),
+                }
+                for task in task_items[:5]
+            ],
+        },
+    )
+
+    notification_items = notifications.get("items", []) or []
+    publish_once(
+        "NotificationCreated",
+        "notification_agent",
+        {
+            "count": notifications.get("count", len(notification_items)),
+            "items": [
+                {
+                    "id": notification.get("id", ""),
+                    "priority": notification.get("priority", ""),
+                    "recipient_role": notification.get("recipient_role", ""),
+                    "notification_type": notification.get("notification_type", ""),
+                    "title": notification.get("title", ""),
+                }
+                for notification in notification_items[:5]
+            ],
+        },
+    )
+
+    if approval.get("required"):
+        publish_once(
+            "ApprovalRequested",
+            "approval_agent",
+            {
+                "status": approval.get("status", ""),
+                "approver_role": approval.get("approver_role", ""),
+                "approval_items": approval.get("approval_items", []),
+            },
+        )
+
+    if execution:
+        publish_once(
+            "ExecutionPlanned",
+            "execution_agent",
+            {
+                "enabled": execution.get("enabled", False),
+                "mode": execution.get("mode", ""),
+                "execution_status": execution.get("execution_status", ""),
+            },
+        )
+
+    publish_once(
+        "OrganizationStateChanged",
+        "organization_awareness",
+        organization_state.get("organization", {}),
+    )
+
+    graph_summary = knowledge_graph.get("summary", {})
+    publish_once(
+        "KnowledgeGraphUpdated",
+        "organizational_knowledge_graph",
+        {
+            "total_nodes": graph_summary.get("total_nodes", 0),
+            "total_edges": graph_summary.get("total_edges", 0),
+        },
+    )
 
 
 def _planning_with_memory(

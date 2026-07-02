@@ -19,6 +19,7 @@ from capability_marketplace_routes import router as capability_marketplace_route
 from organization_awareness_routes import router as organization_awareness_router
 from organizational_knowledge_graph_routes import router as organizational_knowledge_graph_router
 from athena_runtime_routes import router as athena_runtime_router
+from event_bus_routes import router as event_bus_router
 
 
 app = FastAPI(
@@ -67,6 +68,7 @@ app.include_router(capability_marketplace_router)
 app.include_router(organization_awareness_router)
 app.include_router(organizational_knowledge_graph_router)
 app.include_router(athena_runtime_router)
+app.include_router(event_bus_router)
 
 
 if __name__ == "__main__":
