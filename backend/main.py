@@ -21,6 +21,7 @@ from organizational_knowledge_graph_routes import router as organizational_knowl
 from athena_runtime_routes import router as athena_runtime_router
 from event_bus_routes import router as event_bus_router
 from desktop_agent_routes import router as desktop_agent_router
+from athena_reasoning_routes import router as athena_reasoning_router
 
 
 app = FastAPI(
@@ -71,6 +72,7 @@ app.include_router(organizational_knowledge_graph_router)
 app.include_router(athena_runtime_router)
 app.include_router(event_bus_router)
 app.include_router(desktop_agent_router)
+app.include_router(athena_reasoning_router)
 
 
 if __name__ == "__main__":

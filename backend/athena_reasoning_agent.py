@@ -64,6 +64,49 @@ class AthenaReasoningAgent:
             "recommended_handling": "answer",
         }
 
+    def summarize_file_request(self, summary_request: Dict[str, Any]) -> Dict[str, Any]:
+        if not isinstance(summary_request, dict):
+            return self._summary_failure(
+                reason="invalid_summary_request",
+                message="A valid summary_request object is required.",
+            )
+
+        if not summary_request.get("ready_for_reasoning", False):
+            return self._summary_failure(
+                reason="not_ready_for_reasoning",
+                message="The prepared file request is not ready for reasoning.",
+                summary_request=summary_request,
+            )
+
+        content_preview = str(summary_request.get("content_preview", "") or "").strip()
+        if not content_preview:
+            return self._summary_failure(
+                reason="empty_content_preview",
+                message="The prepared file request does not include content_preview text.",
+                summary_request=summary_request,
+            )
+
+        try:
+            summary_text = self._deterministic_preview_summary(content_preview)
+        except Exception as exc:
+            return self._summary_failure(
+                reason="reasoning_error",
+                message=f"Failed to generate deterministic summary: {exc}",
+                summary_request=summary_request,
+            )
+
+        return {
+            "status": "success",
+            "summary": {
+                "source_path": str(summary_request.get("path", "") or ""),
+                "source_name": str(summary_request.get("name", "") or ""),
+                "summary_text": summary_text,
+                "method": "deterministic_preview_summary",
+                "confidence": "limited",
+            },
+            "message": "File summary generated from prepared request.",
+        }
+
     def _missing_information(
         self,
         intent: str,
@@ -154,3 +197,42 @@ class AthenaReasoningAgent:
             if value and value not in deduped:
                 deduped.append(value)
         return deduped
+
+    def _deterministic_preview_summary(self, content_preview: str) -> str:
+        clean = " ".join(content_preview.split())
+        if not clean:
+            return ""
+
+        sentences = re.split(r"(?<=[.!?])\s+", clean)
+        selected = []
+        for sentence in sentences:
+            sentence = sentence.strip()
+            if sentence:
+                selected.append(sentence)
+            if len(selected) >= 2:
+                break
+
+        summary = " ".join(selected) if selected else clean
+        if len(summary) > 300:
+            summary = summary[:297].rstrip() + "..."
+        return summary
+
+    def _summary_failure(
+        self,
+        reason: str,
+        message: str,
+        summary_request: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        summary_request = summary_request or {}
+        return {
+            "status": "blocked",
+            "reason": reason,
+            "summary": {
+                "source_path": str(summary_request.get("path", "") or ""),
+                "source_name": str(summary_request.get("name", "") or ""),
+                "summary_text": "",
+                "method": "deterministic_preview_summary",
+                "confidence": "limited",
+            },
+            "message": message,
+        }
