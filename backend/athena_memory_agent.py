@@ -59,6 +59,62 @@ class AthenaMemoryAgent:
             "reasoning": self._reasoning(intent=intent, document_type=document_type),
         }
 
+    def store_file_understanding(self, workflow: Dict[str, Any]) -> Dict[str, Any]:
+        if not isinstance(workflow, dict) or workflow.get("name") != "file_understanding":
+            return self._memory_store_failure(
+                reason="invalid_workflow",
+                message="A valid file_understanding workflow is required.",
+            )
+
+        file_data = workflow.get("file", {})
+        if not isinstance(file_data, dict) or not file_data.get("path") or not file_data.get("name"):
+            return self._memory_store_failure(
+                reason="missing_file",
+                message="Workflow file metadata is required.",
+            )
+
+        summary = workflow.get("summary", {})
+        summary_text = str(summary.get("summary_text", "") or "").strip() if isinstance(summary, dict) else ""
+        if not isinstance(summary, dict) or not summary_text:
+            return self._memory_store_failure(
+                reason="missing_summary",
+                message="Workflow summary text is required.",
+            )
+
+        memory_record = {
+            "type": "file_understanding",
+            "source_path": str(file_data.get("path", "") or ""),
+            "source_name": str(file_data.get("name", "") or ""),
+            "summary_text": summary_text,
+            "confidence": str(summary.get("confidence", "limited") or "limited"),
+        }
+
+        try:
+            self.business_memory.remember(
+                memory_type=memory_record["type"],
+                subject=memory_record["source_path"],
+                title=memory_record["source_name"],
+                summary=memory_record["summary_text"],
+                metadata={
+                    "extension": file_data.get("extension", ""),
+                    "size_bytes": file_data.get("size_bytes", 0),
+                    "steps_completed": workflow.get("steps_completed", []),
+                    "summary_method": summary.get("method", ""),
+                    "confidence": memory_record["confidence"],
+                },
+            )
+        except Exception as exc:
+            return self._memory_store_failure(
+                reason="memory_store_error",
+                message=f"Failed to store file understanding in memory: {exc}",
+            )
+
+        return {
+            "status": "success",
+            "memory_record": memory_record,
+            "message": "File understanding stored in memory.",
+        }
+
     def _should_search(
         self,
         intent: str,
@@ -167,3 +223,11 @@ class AthenaMemoryAgent:
     def _add_source(self, sources: List[str], source: str) -> None:
         if source not in sources:
             sources.append(source)
+
+    def _memory_store_failure(self, reason: str, message: str) -> Dict[str, Any]:
+        return {
+            "status": "blocked",
+            "reason": reason,
+            "memory_record": {},
+            "message": message,
+        }

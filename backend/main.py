@@ -23,6 +23,7 @@ from event_bus_routes import router as event_bus_router
 from desktop_agent_routes import router as desktop_agent_router
 from athena_reasoning_routes import router as athena_reasoning_router
 from athena_workflow_routes import router as athena_workflow_router
+from athena_memory_routes import router as athena_memory_router
 
 
 app = FastAPI(
@@ -75,6 +76,7 @@ app.include_router(event_bus_router)
 app.include_router(desktop_agent_router)
 app.include_router(athena_reasoning_router)
 app.include_router(athena_workflow_router)
+app.include_router(athena_memory_router)
 
 
 if __name__ == "__main__":
