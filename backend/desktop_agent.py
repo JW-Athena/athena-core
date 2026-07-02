@@ -159,6 +159,43 @@ class AthenaDesktopAgent:
             "message": "",
         }
 
+    def file_info(self, path: str) -> Dict[str, Any]:
+        validation = self._validate_file_path(path)
+        if not validation["valid"]:
+            return {
+                "status": "failed",
+                "file": self._empty_file_info(validation["path"]),
+                "message": validation["message"],
+            }
+
+        safe_path = validation["path"]
+        try:
+            stat = os.stat(safe_path, follow_symlinks=False)
+        except Exception as exc:
+            return {
+                "status": "failed",
+                "file": self._empty_file_info(safe_path),
+                "message": f"Failed to inspect file metadata: {exc}",
+            }
+
+        name = os.path.basename(safe_path)
+        _, extension = os.path.splitext(name)
+
+        return {
+            "status": "success",
+            "file": {
+                "path": safe_path,
+                "exists": True,
+                "name": name,
+                "extension": extension,
+                "size_bytes": int(stat.st_size),
+                "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                "created": datetime.fromtimestamp(stat.st_ctime).isoformat(),
+                "is_file": True,
+            },
+            "message": "File metadata inspected successfully.",
+        }
+
     def _validate_folder_path(self, path: str) -> Dict[str, Any]:
         requested_path = str(path or "").strip().strip('"')
         if not requested_path:
@@ -177,6 +214,31 @@ class AthenaDesktopAgent:
             return self._folder_validation(False, absolute_path, "Folder does not exist.")
         if self._is_admin_folder(absolute_path):
             return self._folder_validation(False, absolute_path, "Administrative and system folders are not allowed.")
+
+        return self._folder_validation(True, absolute_path, "")
+
+    def _validate_file_path(self, path: str) -> Dict[str, Any]:
+        requested_path = str(path or "").strip().strip('"')
+        if not requested_path:
+            return self._folder_validation(False, "", "File path is required.")
+
+        lowered = requested_path.lower()
+        if requested_path.startswith(("\\\\", "//")):
+            return self._folder_validation(False, requested_path, "Network and UNC paths are not allowed.")
+        if any(token in lowered for token in ["shell:", "control panel", "::{", "registry", "regedit"]):
+            return self._folder_validation(False, requested_path, "Shell, registry, and Control Panel paths are not allowed.")
+        if not os.path.isabs(requested_path) or not os.path.splitdrive(requested_path)[0]:
+            return self._folder_validation(False, requested_path, "Only absolute local file paths are allowed.")
+
+        absolute_path = os.path.abspath(requested_path)
+        if self._is_admin_folder(absolute_path):
+            return self._folder_validation(False, absolute_path, "Administrative and system paths are not allowed.")
+        if not os.path.exists(absolute_path):
+            return self._folder_validation(False, absolute_path, "File does not exist.")
+        if os.path.isdir(absolute_path):
+            return self._folder_validation(False, absolute_path, "Folders are not valid for file metadata inspection.")
+        if not os.path.isfile(absolute_path):
+            return self._folder_validation(False, absolute_path, "Path is not a regular file.")
 
         return self._folder_validation(True, absolute_path, "")
 
@@ -203,6 +265,20 @@ class AthenaDesktopAgent:
             "valid": valid,
             "path": path,
             "message": message,
+        }
+
+    def _empty_file_info(self, path: str) -> Dict[str, Any]:
+        name = os.path.basename(path) if path else ""
+        _, extension = os.path.splitext(name)
+        return {
+            "path": path,
+            "exists": False,
+            "name": name,
+            "extension": extension,
+            "size_bytes": 0,
+            "modified": "",
+            "created": "",
+            "is_file": False,
         }
 
 

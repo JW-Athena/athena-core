@@ -120,3 +120,37 @@ async def list_folder(payload: Dict[str, Any] = Body(default_factory=dict)):
         "folders": result.get("folders", []),
         "files": result.get("files", []),
     }
+
+
+@router.post("/athena/desktop/file-info")
+async def file_info(payload: Dict[str, Any] = Body(default_factory=dict)):
+    result = desktop_agent.file_info(payload.get("path", ""))
+    status = result.get("status", "failed")
+    file_data = result.get("file", {})
+    event_type = "DesktopFileInspected" if status == "success" else "DesktopActionFailed"
+
+    event_bus.publish(
+        event_type,
+        "desktop_agent",
+        {
+            "action": "file_info",
+            "path": file_data.get("path", ""),
+            "result": status,
+        },
+    )
+
+    return {
+        "engine": "desktop_agent",
+        "status": status,
+        "file": {
+            "path": file_data.get("path", ""),
+            "exists": bool(file_data.get("exists", False)),
+            "name": file_data.get("name", ""),
+            "extension": file_data.get("extension", ""),
+            "size_bytes": int(file_data.get("size_bytes", 0) or 0),
+            "modified": file_data.get("modified", ""),
+            "created": file_data.get("created", ""),
+            "is_file": bool(file_data.get("is_file", False)),
+        },
+        "message": result.get("message", ""),
+    }
