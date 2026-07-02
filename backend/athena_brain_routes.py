@@ -15,6 +15,7 @@ from opportunity_scoring_engine import OpportunityScoringEngine
 from risk_register_engine import RiskRegisterEngine
 from agent_registry import agent_registry
 from organization_awareness import organization_awareness
+from organizational_knowledge_graph import organizational_knowledge_graph
 from timing_utils import new_request_context, timed_step
 
 
@@ -235,6 +236,17 @@ def _analyze_document(
         execution=execution,
         engine_outputs=engine_outputs,
     )
+    knowledge_graph = organizational_knowledge_graph.update_from_analysis(
+        metadata=metadata,
+        document_type=document_type or "",
+        decision=decision,
+        tasks=tasks,
+        notifications=notifications,
+        execution=execution,
+        action_plan=action_plan,
+        browser_plan=browser_plan,
+        engine_outputs=engine_outputs,
+    )
 
     return {
         "workflow": workflow,
@@ -252,6 +264,7 @@ def _analyze_document(
         "action_plan": action_plan,
         "browser_plan": browser_plan,
         "organization_state": organization_state,
+        "knowledge_graph": knowledge_graph,
         "brain_summary": _brain_summary(
             workflow=workflow,
             document_type=document_type,
