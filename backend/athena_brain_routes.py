@@ -15,6 +15,7 @@ from opportunity_scoring_engine import OpportunityScoringEngine
 from risk_register_engine import RiskRegisterEngine
 from athena_memory_agent import AthenaMemoryAgent
 from athena_planner import AthenaPlanner
+from athena_reasoning_agent import AthenaReasoningAgent
 from timing_utils import new_request_context, timed_step
 
 
@@ -32,6 +33,7 @@ bid_engine = BidNoBidEngine()
 rag_engine = RAGAnswerEngine()
 planner = AthenaPlanner()
 memory_agent = AthenaMemoryAgent()
+reasoning_agent = AthenaReasoningAgent()
 
 
 @router.post("/athena/analyze")
@@ -123,6 +125,13 @@ def _analyze_document(
         document_type=document_type,
         metadata=metadata,
     )
+    reasoning = reasoning_agent.evaluate(
+        plan=plan,
+        question=question,
+        document_type=document_type,
+        text=text,
+        metadata=metadata,
+    )
     workflow = plan.get("intent", "question_answering")
     engine_outputs = _run_workflow(
         workflow=workflow,
@@ -139,6 +148,7 @@ def _analyze_document(
         "question": question or "",
         "document_type": document_type or "",
         "planning": _planning_with_memory(plan=plan, memory=memory),
+        "reasoning": reasoning,
         "brain_summary": _brain_summary(
             workflow=workflow,
             document_type=document_type,
