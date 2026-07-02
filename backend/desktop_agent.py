@@ -1,5 +1,6 @@
 import os
 import subprocess
+from datetime import datetime
 from typing import Any, Dict
 
 
@@ -95,6 +96,67 @@ class AthenaDesktopAgent:
             "path": safe_path,
             "executed": True,
             "message": "Folder opened successfully.",
+        }
+
+    def list_folder(self, path: str) -> Dict[str, Any]:
+        validation = self._validate_folder_path(path)
+        if not validation["valid"]:
+            return {
+                "status": "failed",
+                "folder": validation["path"],
+                "exists": False,
+                "item_count": 0,
+                "folders": [],
+                "files": [],
+                "message": validation["message"],
+            }
+
+        safe_path = validation["path"]
+        folders = []
+        files = []
+
+        try:
+            with os.scandir(safe_path) as entries:
+                for entry in entries:
+                    try:
+                        stat = entry.stat(follow_symlinks=False)
+                    except OSError:
+                        continue
+
+                    if entry.is_dir(follow_symlinks=False):
+                        folders.append(entry.name)
+                    elif entry.is_file(follow_symlinks=False):
+                        _, extension = os.path.splitext(entry.name)
+                        files.append(
+                            {
+                                "name": entry.name,
+                                "extension": extension,
+                                "size_bytes": int(stat.st_size),
+                                "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                            }
+                        )
+        except Exception as exc:
+            return {
+                "status": "failed",
+                "folder": safe_path,
+                "exists": True,
+                "item_count": 0,
+                "folders": [],
+                "files": [],
+                "message": f"Failed to list folder: {exc}",
+            }
+
+        folders.sort(key=str.lower)
+        files.sort(key=lambda item: item["name"].lower())
+
+        return {
+            "status": "success",
+            "folder": safe_path,
+            "exists": True,
+            "item_count": len(folders) + len(files),
+            "folders": folders,
+            "files": files,
+            "message": "",
         }
 
     def _validate_folder_path(self, path: str) -> Dict[str, Any]:
