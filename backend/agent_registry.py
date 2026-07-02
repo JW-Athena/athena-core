@@ -1,5 +1,6 @@
 from typing import Any, Callable, Dict, List
 
+from athena_approval_agent import AthenaApprovalAgent
 from athena_clarification_agent import AthenaClarificationAgent
 from athena_decision_engine import AthenaDecisionEngine
 from athena_execution_agent import AthenaExecutionAgent
@@ -139,6 +140,18 @@ class AgentRegistry:
                 "outputs": ["execution"],
                 "depends_on": ["decision_engine", "task_agent", "notification_agent"],
                 "factory": AthenaExecutionAgent,
+            },
+            "approval_agent": {
+                "id": "approval_agent",
+                "name": "Approval Agent",
+                "version": "1.0",
+                "enabled": True,
+                "type": "approval",
+                "description": "Determines whether future execution actions require management approval.",
+                "inputs": ["decision", "tasks", "notifications", "execution"],
+                "outputs": ["approval"],
+                "depends_on": ["decision_engine", "task_agent", "notification_agent", "execution_agent"],
+                "factory": AthenaApprovalAgent,
             },
         }
 
