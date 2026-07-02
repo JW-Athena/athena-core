@@ -27,6 +27,9 @@ class AthenaDesktopAgent:
             "summary": "Desktop Agent is installed but execution is disabled.",
         }
 
+    SAFE_TEXT_EXTENSIONS = {".txt", ".md", ".json", ".log", ".csv"}
+    MAX_SAFE_TEXT_BYTES = 1024 * 1024
+
     def can_execute(self, approval: Dict[str, Any], execution: Dict[str, Any]) -> bool:
         execution_enabled = bool(execution.get("enabled", False))
         approval_required = bool(approval.get("required", True))
@@ -196,6 +199,71 @@ class AthenaDesktopAgent:
             "message": "File metadata inspected successfully.",
         }
 
+    def read_file(self, path: str) -> Dict[str, Any]:
+        validation = self._validate_readable_text_file(path)
+        if not validation["valid"]:
+            return {
+                "status": "blocked",
+                "reason": validation["reason"],
+                "file": self._empty_read_file_info(validation["path"]),
+                "message": validation["message"],
+            }
+
+        safe_path = validation["path"]
+        try:
+            with open(safe_path, "rb") as handle:
+                raw_content = handle.read(self.MAX_SAFE_TEXT_BYTES + 1)
+        except Exception as exc:
+            return {
+                "status": "blocked",
+                "reason": "read_error",
+                "file": self._empty_read_file_info(safe_path),
+                "message": f"Failed to read file safely: {exc}",
+            }
+
+        if self._is_binary_content(raw_content):
+            return {
+                "status": "blocked",
+                "reason": "binary_file_detected",
+                "file": self._empty_read_file_info(safe_path),
+                "message": "Binary file content was detected.",
+            }
+
+        try:
+            content = self._decode_text(raw_content)
+        except UnicodeDecodeError:
+            return {
+                "status": "blocked",
+                "reason": "binary_file_detected",
+                "file": self._empty_read_file_info(safe_path),
+                "message": "File could not be decoded as safe text.",
+            }
+        except Exception as exc:
+            return {
+                "status": "blocked",
+                "reason": "read_error",
+                "file": self._empty_read_file_info(safe_path),
+                "message": f"Failed to decode file safely: {exc}",
+            }
+
+        stat = os.stat(safe_path, follow_symlinks=False)
+        name = os.path.basename(safe_path)
+        _, extension = os.path.splitext(name)
+
+        return {
+            "status": "success",
+            "file": {
+                "path": safe_path,
+                "exists": True,
+                "name": name,
+                "extension": extension.lower(),
+                "size_bytes": int(stat.st_size),
+                "content": content,
+                "truncated": False,
+            },
+            "message": "Safe text file read successfully.",
+        }
+
     def _validate_folder_path(self, path: str) -> Dict[str, Any]:
         requested_path = str(path or "").strip().strip('"')
         if not requested_path:
@@ -242,6 +310,43 @@ class AthenaDesktopAgent:
 
         return self._folder_validation(True, absolute_path, "")
 
+    def _validate_readable_text_file(self, path: str) -> Dict[str, Any]:
+        requested_path = str(path or "").strip().strip('"')
+        if not requested_path:
+            return self._read_validation(False, "", "file_not_found", "File path is required.")
+
+        lowered = requested_path.lower()
+        if requested_path.startswith(("\\\\", "//")):
+            return self._read_validation(False, requested_path, "file_not_found", "Network and UNC paths are not allowed.")
+        if any(token in lowered for token in ["shell:", "control panel", "::{", "registry", "regedit"]):
+            return self._read_validation(False, requested_path, "file_not_found", "Shell, registry, and Control Panel paths are not allowed.")
+        if not os.path.isabs(requested_path) or not os.path.splitdrive(requested_path)[0]:
+            return self._read_validation(False, requested_path, "file_not_found", "Only absolute local file paths are allowed.")
+
+        absolute_path = os.path.abspath(requested_path)
+        if self._is_admin_folder(absolute_path):
+            return self._read_validation(False, absolute_path, "file_not_found", "Administrative and system paths are not allowed.")
+        if not os.path.exists(absolute_path):
+            return self._read_validation(False, absolute_path, "file_not_found", "File does not exist.")
+        if os.path.isdir(absolute_path):
+            return self._read_validation(False, absolute_path, "path_is_directory", "Folders cannot be read as files.")
+        if not os.path.isfile(absolute_path):
+            return self._read_validation(False, absolute_path, "file_not_found", "Path is not a regular file.")
+
+        _, extension = os.path.splitext(absolute_path)
+        if extension.lower() not in self.SAFE_TEXT_EXTENSIONS:
+            return self._read_validation(False, absolute_path, "unsupported_file_type", "File type is not allowed for safe text reading.")
+
+        try:
+            size_bytes = os.path.getsize(absolute_path)
+        except OSError as exc:
+            return self._read_validation(False, absolute_path, "read_error", f"Failed to inspect file size: {exc}")
+
+        if size_bytes > self.MAX_SAFE_TEXT_BYTES:
+            return self._read_validation(False, absolute_path, "file_too_large", "File exceeds the 1 MB safe read limit.")
+
+        return self._read_validation(True, absolute_path, "", "")
+
     def _is_admin_folder(self, path: str) -> bool:
         normalized = os.path.normcase(os.path.abspath(path))
         protected_roots = [
@@ -267,6 +372,14 @@ class AthenaDesktopAgent:
             "message": message,
         }
 
+    def _read_validation(self, valid: bool, path: str, reason: str, message: str) -> Dict[str, Any]:
+        return {
+            "valid": valid,
+            "path": path,
+            "reason": reason,
+            "message": message,
+        }
+
     def _empty_file_info(self, path: str) -> Dict[str, Any]:
         name = os.path.basename(path) if path else ""
         _, extension = os.path.splitext(name)
@@ -280,6 +393,39 @@ class AthenaDesktopAgent:
             "created": "",
             "is_file": False,
         }
+
+    def _empty_read_file_info(self, path: str) -> Dict[str, Any]:
+        name = os.path.basename(path) if path else ""
+        _, extension = os.path.splitext(name)
+        return {
+            "path": path,
+            "exists": os.path.exists(path) if path else False,
+            "name": name,
+            "extension": extension.lower(),
+            "size_bytes": 0,
+            "content": "",
+            "truncated": False,
+        }
+
+    def _is_binary_content(self, content: bytes) -> bool:
+        if not content:
+            return False
+        if b"\x00" in content:
+            return True
+
+        allowed_controls = {7, 8, 9, 10, 12, 13, 27}
+        control_count = 0
+        for byte in content:
+            if byte < 32 and byte not in allowed_controls:
+                control_count += 1
+
+        return (control_count / len(content)) > 0.05
+
+    def _decode_text(self, content: bytes) -> str:
+        try:
+            return content.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            return content.decode("cp1252")
 
 
 desktop_agent = AthenaDesktopAgent()

@@ -154,3 +154,51 @@ async def file_info(payload: Dict[str, Any] = Body(default_factory=dict)):
         },
         "message": result.get("message", ""),
     }
+
+
+@router.post("/athena/desktop/read-file")
+async def read_file(payload: Dict[str, Any] = Body(default_factory=dict)):
+    result = desktop_agent.read_file(payload.get("path", ""))
+    status = result.get("status", "blocked")
+    file_data = result.get("file", {})
+
+    if status == "success":
+        event_bus.publish(
+            "DesktopFileRead",
+            "desktop_agent",
+            {
+                "action": "read_file",
+                "path": file_data.get("path", ""),
+                "result": "success",
+            },
+        )
+    else:
+        event_bus.publish(
+            "DesktopActionFailed",
+            "desktop_agent",
+            {
+                "action": "read_file",
+                "path": file_data.get("path", ""),
+                "result": "failed",
+                "reason": result.get("reason", "read_error"),
+            },
+        )
+
+    response = {
+        "engine": "desktop_agent",
+        "status": status,
+        "file": {
+            "path": file_data.get("path", ""),
+            "exists": bool(file_data.get("exists", False)),
+            "name": file_data.get("name", ""),
+            "extension": file_data.get("extension", ""),
+            "size_bytes": int(file_data.get("size_bytes", 0) or 0),
+            "content": file_data.get("content", ""),
+            "truncated": bool(file_data.get("truncated", False)),
+        },
+    }
+    if status != "success":
+        response["reason"] = result.get("reason", "read_error")
+    if result.get("message"):
+        response["message"] = result.get("message", "")
+    return response
