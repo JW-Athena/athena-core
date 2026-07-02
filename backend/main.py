@@ -14,6 +14,7 @@ load_dotenv(
 )
 
 from routes import register_routes
+from athena_brain_routes import router as athena_brain_router
 
 
 app = FastAPI(
@@ -57,6 +58,7 @@ def health():
 
 
 register_routes(app)
+app.include_router(athena_brain_router)
 
 
 if __name__ == "__main__":
