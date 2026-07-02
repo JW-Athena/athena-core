@@ -1,13 +1,13 @@
 {
   "organization": {
     "current_mode": "Watch",
-    "active_opportunities": 7,
-    "critical_risks": 16,
-    "pending_decisions": 7,
-    "pending_tasks": 45,
-    "pending_notifications": 51,
-    "execution_queue": 42,
-    "last_analysis_time": "2026-07-02T07:29:16.838638",
+    "active_opportunities": 8,
+    "critical_risks": 20,
+    "pending_decisions": 8,
+    "pending_tasks": 56,
+    "pending_notifications": 63,
+    "execution_queue": 48,
+    "last_analysis_time": "2026-07-02T07:43:38.289335",
     "overall_health": "Poor"
   }
 }
