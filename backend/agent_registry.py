@@ -2,6 +2,7 @@ from typing import Any, Callable, Dict, List
 
 from athena_clarification_agent import AthenaClarificationAgent
 from athena_decision_engine import AthenaDecisionEngine
+from athena_execution_agent import AthenaExecutionAgent
 from athena_memory_agent import AthenaMemoryAgent
 from athena_notification_agent import AthenaNotificationAgent
 from athena_planner import AthenaPlanner
@@ -126,6 +127,18 @@ class AgentRegistry:
                 "outputs": ["notifications"],
                 "depends_on": ["decision_engine", "task_agent"],
                 "factory": AthenaNotificationAgent,
+            },
+            "execution_agent": {
+                "id": "execution_agent",
+                "name": "Execution Agent",
+                "version": "1.0",
+                "enabled": True,
+                "type": "execution",
+                "description": "Creates planning-only execution plans from decisions, tasks, and notifications.",
+                "inputs": ["decision", "tasks", "notifications", "reasoning", "clarification"],
+                "outputs": ["execution"],
+                "depends_on": ["decision_engine", "task_agent", "notification_agent"],
+                "factory": AthenaExecutionAgent,
             },
         }
 
