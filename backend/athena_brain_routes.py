@@ -17,6 +17,7 @@ from athena_clarification_agent import AthenaClarificationAgent
 from athena_memory_agent import AthenaMemoryAgent
 from athena_planner import AthenaPlanner
 from athena_reasoning_agent import AthenaReasoningAgent
+from athena_task_agent import AthenaTaskAgent
 from athena_workflow_agent import AthenaWorkflowAgent
 from timing_utils import new_request_context, timed_step
 
@@ -38,6 +39,7 @@ memory_agent = AthenaMemoryAgent()
 reasoning_agent = AthenaReasoningAgent()
 clarification_agent = AthenaClarificationAgent()
 workflow_agent = AthenaWorkflowAgent()
+task_agent = AthenaTaskAgent()
 
 
 @router.post("/athena/analyze")
@@ -175,6 +177,7 @@ def _analyze_document(
             execution_summary=workflow_execution.get("execution_summary", ""),
         )
     selected_engines = list(engine_outputs.keys())
+    tasks = task_agent.generate(engine_outputs=engine_outputs)
 
     return {
         "workflow": workflow,
@@ -184,6 +187,7 @@ def _analyze_document(
         "reasoning": reasoning,
         "clarification": clarification,
         "workflow_execution": workflow_execution,
+        "tasks": tasks,
         "brain_summary": _brain_summary(
             workflow=workflow,
             document_type=document_type,
