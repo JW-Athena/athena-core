@@ -39,6 +39,7 @@ task_agent = agent_registry.create_agent("task_agent")
 notification_agent = agent_registry.create_agent("notification_agent")
 execution_agent = agent_registry.create_agent("execution_agent")
 approval_agent = agent_registry.create_agent("approval_agent")
+action_planner = agent_registry.create_agent("action_planner")
 
 
 @router.get("/athena/agents")
@@ -213,6 +214,13 @@ def _analyze_document(
         notifications=notifications,
         execution=execution,
     )
+    action_plan = action_planner.plan(
+        execution=execution,
+        decision=decision,
+        tasks=tasks,
+        notifications=notifications,
+        approval=approval,
+    )
 
     return {
         "workflow": workflow,
@@ -227,6 +235,7 @@ def _analyze_document(
         "notifications": notifications,
         "approval": approval,
         "execution": execution,
+        "action_plan": action_plan,
         "brain_summary": _brain_summary(
             workflow=workflow,
             document_type=document_type,

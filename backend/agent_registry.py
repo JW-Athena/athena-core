@@ -1,5 +1,6 @@
 from typing import Any, Callable, Dict, List
 
+from athena_action_planner import AthenaActionPlanner
 from athena_approval_agent import AthenaApprovalAgent
 from athena_clarification_agent import AthenaClarificationAgent
 from athena_decision_engine import AthenaDecisionEngine
@@ -152,6 +153,18 @@ class AgentRegistry:
                 "outputs": ["approval"],
                 "depends_on": ["decision_engine", "task_agent", "notification_agent", "execution_agent"],
                 "factory": AthenaApprovalAgent,
+            },
+            "action_planner": {
+                "id": "action_planner",
+                "name": "Action Planner",
+                "version": "1.0",
+                "enabled": True,
+                "type": "planning",
+                "description": "Converts execution plans into ordered future action sequences.",
+                "inputs": ["execution", "decision", "tasks", "notifications", "approval"],
+                "outputs": ["action_plan"],
+                "depends_on": ["execution_agent", "approval_agent"],
+                "factory": AthenaActionPlanner,
             },
         }
 
