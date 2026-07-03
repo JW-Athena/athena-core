@@ -27,6 +27,7 @@ from athena_memory_routes import router as athena_memory_router
 from athena_planner_routes import router as athena_planner_router
 from athena_decision_routes import router as athena_decision_router
 from executive_file_intelligence_loop_routes import router as executive_file_intelligence_loop_router
+from executive_document_intelligence_loop_routes import router as executive_document_intelligence_loop_router
 
 
 app = FastAPI(
@@ -83,6 +84,7 @@ app.include_router(athena_memory_router)
 app.include_router(athena_planner_router)
 app.include_router(athena_decision_router)
 app.include_router(executive_file_intelligence_loop_router)
+app.include_router(executive_document_intelligence_loop_router)
 
 
 if __name__ == "__main__":
