@@ -1,6 +1,7 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Dict, List
 import asyncio
+import builtins
 
 from engine_011_routes import execute_objective
 from engine_013_learning_engine import execution_learning_engine
@@ -10,6 +11,11 @@ from event_bus import event_bus
 
 
 class MissionController:
+    def __init__(self):
+        if not hasattr(builtins, "_ATHENA_MISSION_RECORDS"):
+            builtins._ATHENA_MISSION_RECORDS = []
+        self._mission_records: List[Dict[str, Any]] = builtins._ATHENA_MISSION_RECORDS
+
     async def execute_mission(self, mission: str, path: str = "") -> Dict[str, Any]:
         clean_mission = str(mission or "").strip()
         objectives = self.decompose_mission(clean_mission)
@@ -250,7 +256,27 @@ class MissionController:
                 "result": response["status"],
             },
         )
+        self._store_mission_record(response)
         return response
+
+    def list_mission_records(self) -> List[Dict[str, Any]]:
+        return [dict(record) for record in self._mission_records]
+
+    def _store_mission_record(self, response: Dict[str, Any]) -> None:
+        self._mission_records.append(
+            {
+                "mission": response.get("mission", ""),
+                "mission_status": response.get("mission_status", ""),
+                "status": response.get("status", ""),
+                "objectives_total": response.get("objectives_total", 0),
+                "objectives_completed": response.get("objectives_completed", 0),
+                "objectives_failed": response.get("objectives_failed", 0),
+                "approval_required": bool(response.get("approval_required", False)),
+                "mission_statistics": response.get("mission_statistics", {}),
+                "parallel_execution": response.get("parallel_execution", {}),
+                "mission_evaluation": response.get("mission_evaluation", {}),
+            }
+        )
 
     def _execute_objective_level(
         self,
