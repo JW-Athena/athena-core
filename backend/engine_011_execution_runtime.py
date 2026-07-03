@@ -8,6 +8,7 @@ from capability_004_executive_extraction import ExecutiveInformationExtractor
 from capability_005_obligation_extraction import ObligationExtractor
 from desktop_agent import desktop_agent
 from event_bus import event_bus
+from engine_012_execution_evaluator import evaluate_execution
 from executive_action_plan_engine import ExecutiveActionPlanEngine
 from executive_decision_brief_engine import ExecutiveDecisionBriefEngine
 from executive_file_intelligence_loop_routes import file_intelligence_loop
@@ -148,6 +149,7 @@ class ExecutiveExecutionRuntime:
                 "executive_response": self._executive_response(results),
                 "plan_driven": True,
             }
+            response["execution_evaluation"] = self._evaluate_execution(response)
 
             event_bus.publish(
                 "BrainObjectiveExecutionCompleted",
@@ -548,6 +550,58 @@ class ExecutiveExecutionRuntime:
             if text:
                 return text
         return ""
+
+    def _evaluate_execution(self, response: Dict[str, Any]) -> Dict[str, Any]:
+        try:
+            evaluation = evaluate_execution(
+                objective=response.get("objective", ""),
+                selected_plan=response.get("selected_plan", ""),
+                execution_status=response.get("execution_status", ""),
+                capabilities_executed=response.get("capabilities_executed", []),
+                results=response.get("results", {}),
+                executive_response=response.get("executive_response", {}),
+            )
+            event_bus.publish(
+                "ExecutionEvaluationCompleted",
+                "executive_brain",
+                {
+                    "objective": response.get("objective", ""),
+                    "selected_plan": response.get("selected_plan", ""),
+                    "objective_satisfied": bool(evaluation.get("objective_satisfied", False)),
+                    "decision_ready": bool(evaluation.get("decision_ready", False)),
+                    "confidence": int(evaluation.get("confidence", 0) or 0),
+                    "approval_required": bool(evaluation.get("approval_required", False)),
+                    "result": "success",
+                },
+            )
+            return evaluation
+        except Exception as exc:
+            event_bus.publish(
+                "ExecutionEvaluationFailed",
+                "executive_brain",
+                {
+                    "objective": response.get("objective", ""),
+                    "selected_plan": response.get("selected_plan", ""),
+                    "reason": "execution_evaluation_error",
+                    "result": "failed",
+                },
+            )
+            return {
+                "evaluation_status": "failed",
+                "objective_satisfied": False,
+                "decision_ready": False,
+                "confidence": 0,
+                "approval_required": False,
+                "completion_quality": "low",
+                "failed_capabilities": [],
+                "skipped_capabilities": [],
+                "unsupported_capabilities": [],
+                "missing_information": [],
+                "key_findings": [],
+                "recommended_next_action": "Review execution results manually before making a decision.",
+                "evaluation_summary": f"Execution evaluation failed: {exc}",
+                "reason": "execution_evaluation_error",
+            }
 
 
 def _safe_int(value: Any) -> int:
