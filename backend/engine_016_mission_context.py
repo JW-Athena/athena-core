@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from threading import RLock
 from typing import Any, Dict
 from uuid import uuid4
 
@@ -12,6 +13,7 @@ class MissionExecutionContext:
     shared_outputs: Dict[str, Any] = field(default_factory=dict)
     capability_cache: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     metadata: Dict[str, Any] = field(default_factory=dict)
+    lock: RLock = field(default_factory=RLock)
     execution_statistics: Dict[str, int] = field(
         default_factory=lambda: {
             "capabilities_requested": 0,
@@ -24,23 +26,26 @@ class MissionExecutionContext:
     )
 
     def cache_hit(self, capability: str, objective_id: str = "") -> Dict[str, Any]:
-        self.execution_statistics["capabilities_requested"] += 1
-        if capability not in self.capability_cache:
-            self.execution_statistics["cache_misses"] += 1
-            event_bus.publish(
-                "MissionCacheMiss",
-                "executive_mission_context",
-                {
-                    "mission_id": self.mission_id,
-                    "capability": capability,
-                    "objective_id": objective_id,
-                },
-            )
-            return {}
+        with self.lock:
+            self.execution_statistics["capabilities_requested"] += 1
+            if capability not in self.capability_cache:
+                self.execution_statistics["cache_misses"] += 1
+                event_bus.publish(
+                    "MissionCacheMiss",
+                    "executive_mission_context",
+                    {
+                        "mission_id": self.mission_id,
+                        "capability": capability,
+                        "objective_id": objective_id,
+                    },
+                )
+                return {}
 
-        self.execution_statistics["capabilities_reused"] += 1
-        self.execution_statistics["cache_hits"] += 1
-        self.execution_statistics["execution_time_saved_ms"] += self._estimated_saved_ms(capability)
+            self.execution_statistics["capabilities_reused"] += 1
+            self.execution_statistics["cache_hits"] += 1
+            self.execution_statistics["execution_time_saved_ms"] += self._estimated_saved_ms(capability)
+            cached = dict(self.capability_cache[capability])
+
         event_bus.publish(
             "MissionCacheHit",
             "executive_mission_context",
@@ -50,7 +55,7 @@ class MissionExecutionContext:
                 "objective_id": objective_id,
             },
         )
-        return dict(self.capability_cache[capability])
+        return cached
 
     def store_capability_result(
         self,
@@ -58,16 +63,19 @@ class MissionExecutionContext:
         result: Dict[str, Any],
         objective_id: str = "",
     ) -> None:
-        self.capability_cache[capability] = dict(result)
-        self.execution_statistics["capabilities_executed"] += 1
-        if objective_id:
-            self.metadata["last_objective_id"] = objective_id
+        with self.lock:
+            self.capability_cache[capability] = dict(result)
+            self.execution_statistics["capabilities_executed"] += 1
+            if objective_id:
+                self.metadata["last_objective_id"] = objective_id
 
     def store_objective_result(self, objective_id: str, result: Dict[str, Any]) -> None:
-        self.objective_results[objective_id] = result
+        with self.lock:
+            self.objective_results[objective_id] = result
 
     def statistics(self) -> Dict[str, int]:
-        stats = dict(self.execution_statistics)
+        with self.lock:
+            stats = dict(self.execution_statistics)
         return {
             "capabilities_requested": stats.get("capabilities_requested", 0),
             "executed": stats.get("capabilities_executed", 0),

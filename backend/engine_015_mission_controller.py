@@ -1,4 +1,6 @@
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Dict, List
+import asyncio
 
 from engine_011_routes import execute_objective
 from engine_013_learning_engine import execution_learning_engine
@@ -30,64 +32,153 @@ class MissionController:
         completed = 0
         failed = 0
         stopped = False
+        max_workers = 3
+        dependency_levels = self._dependency_levels(objectives)
+        parallelized_count = sum(1 for level in dependency_levels if len(level) > 1)
+
+        event_bus.publish(
+            "MissionParallelExecutionStarted",
+            "executive_mission_controller",
+            {
+                "mission_id": mission_context.mission_id,
+                "mission": clean_mission,
+                "dependency_levels": dependency_levels,
+                "result": "started",
+            },
+        )
+
+        objective_map = {
+            objective["objective_id"]: objective
+            for objective in objectives
+        }
+        completed_ids = set()
+        failed_ids = set()
+
+        for level_index, level in enumerate(dependency_levels, start=1):
+            ready_objectives = [
+                objective_map[objective_id]
+                for objective_id in level
+                if self._dependencies_completed(objective_map[objective_id], completed_ids)
+                and not self._dependencies_failed(objective_map[objective_id], failed_ids)
+            ]
+            skipped_objectives = [
+                objective_map[objective_id]
+                for objective_id in level
+                if objective_id not in {objective["objective_id"] for objective in ready_objectives}
+            ]
+            for objective in skipped_objectives:
+                objective["status"] = "failed"
+                failed += 1
+                failed_ids.add(objective["objective_id"])
+
+            if stopped or not ready_objectives:
+                continue
+
+            event_bus.publish(
+                "MissionDependencyLevelStarted",
+                "executive_mission_controller",
+                {
+                    "mission_id": mission_context.mission_id,
+                    "mission": clean_mission,
+                    "dependency_level": level_index,
+                    "objective_ids": [objective["objective_id"] for objective in ready_objectives],
+                    "result": "started",
+                },
+            )
+
+            level_results = self._execute_objective_level(
+                objectives=ready_objectives,
+                mission=clean_mission,
+                path=path,
+                mission_context=mission_context,
+                max_workers=max_workers,
+            )
+
+            for objective in ready_objectives:
+                objective_id = objective["objective_id"]
+                result = level_results.get(objective_id, {})
+                objective_results[objective_id] = result
+                mission_context.store_objective_result(objective_id, result)
+
+                if isinstance(result, dict) and result.get("status") == "success":
+                    objective["status"] = "completed"
+                    completed += 1
+                    completed_ids.add(objective_id)
+                    event_bus.publish(
+                        "MissionObjectiveCompleted",
+                        "executive_mission_controller",
+                        {
+                            "mission_id": mission_context.mission_id,
+                            "mission": clean_mission,
+                            "objective_id": objective_id,
+                            "objective": objective["objective"],
+                            "result": "success",
+                        },
+                    )
+                else:
+                    objective["status"] = "failed"
+                    failed += 1
+                    failed_ids.add(objective_id)
+                    event_bus.publish(
+                        "MissionObjectiveFailed",
+                        "executive_mission_controller",
+                        {
+                            "mission_id": mission_context.mission_id,
+                            "mission": clean_mission,
+                            "objective_id": objective_id,
+                            "objective": objective["objective"],
+                            "reason": result.get("reason", "objective_execution_failed") if isinstance(result, dict) else "objective_execution_failed",
+                            "result": "failed",
+                        },
+                    )
+                    if objective.get("critical"):
+                        stopped = True
+
+            event_bus.publish(
+                "MissionDependencyLevelCompleted",
+                "executive_mission_controller",
+                {
+                    "mission_id": mission_context.mission_id,
+                    "mission": clean_mission,
+                    "dependency_level": level_index,
+                    "objective_ids": [objective["objective_id"] for objective in ready_objectives],
+                    "result": "success",
+                },
+            )
+
+            if stopped:
+                break
+
+        event_bus.publish(
+            "MissionParallelExecutionCompleted",
+            "executive_mission_controller",
+            {
+                "mission_id": mission_context.mission_id,
+                "mission": clean_mission,
+                "dependency_levels": dependency_levels,
+                "result": "success" if not stopped else "failed",
+            },
+        )
 
         for objective in objectives:
+            if objective["status"] != "pending":
+                continue
             objective_id = objective["objective_id"]
+            objective["status"] = "failed"
+            failed += 1
+            failed_ids.add(objective_id)
             event_bus.publish(
-                "MissionObjectiveStarted",
+                "MissionObjectiveFailed",
                 "executive_mission_controller",
                 {
                     "mission_id": mission_context.mission_id,
                     "mission": clean_mission,
                     "objective_id": objective_id,
                     "objective": objective["objective"],
-                    "result": "started",
+                    "reason": "dependency_not_completed",
+                    "result": "failed",
                 },
             )
-
-            result = await execute_objective(
-                {
-                    "objective": objective["objective"],
-                    "path": path,
-                    "mission_context": mission_context,
-                    "objective_id": objective_id,
-                }
-            )
-            objective_results[objective_id] = result
-            mission_context.store_objective_result(objective_id, result)
-
-            if isinstance(result, dict) and result.get("status") == "success":
-                objective["status"] = "completed"
-                completed += 1
-                event_bus.publish(
-                    "MissionObjectiveCompleted",
-                    "executive_mission_controller",
-                    {
-                        "mission_id": mission_context.mission_id,
-                        "mission": clean_mission,
-                        "objective_id": objective_id,
-                        "objective": objective["objective"],
-                        "result": "success",
-                    },
-                )
-            else:
-                objective["status"] = "failed"
-                failed += 1
-                event_bus.publish(
-                    "MissionObjectiveFailed",
-                    "executive_mission_controller",
-                    {
-                        "mission_id": mission_context.mission_id,
-                        "mission": clean_mission,
-                        "objective_id": objective_id,
-                        "objective": objective["objective"],
-                        "reason": result.get("reason", "objective_execution_failed") if isinstance(result, dict) else "objective_execution_failed",
-                        "result": "failed",
-                    },
-                )
-                if objective.get("critical"):
-                    stopped = True
-                    break
 
         mission_status = self._mission_status(
             completed=completed,
@@ -127,6 +218,13 @@ class MissionController:
             "objectives_failed": failed,
             "objectives": objectives,
             "objective_results": objective_results,
+            "execution_mode": "parallel",
+            "parallel_execution": {
+                "enabled": True,
+                "max_workers": max_workers,
+                "objectives_parallelized": parallelized_count,
+                "dependency_levels": dependency_levels,
+            },
             "mission_statistics": mission_context.statistics(),
             "mission_evaluation": mission_evaluation,
             "approval_required": approval_required,
@@ -153,6 +251,70 @@ class MissionController:
             },
         )
         return response
+
+    def _execute_objective_level(
+        self,
+        objectives: List[Dict[str, Any]],
+        mission: str,
+        path: str,
+        mission_context: MissionExecutionContext,
+        max_workers: int,
+    ) -> Dict[str, Any]:
+        results = {}
+        workers = max(1, min(max_workers, len(objectives)))
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            futures = {
+                executor.submit(
+                    self._execute_objective_sync,
+                    objective,
+                    mission,
+                    path,
+                    mission_context,
+                ): objective
+                for objective in objectives
+            }
+            for future in as_completed(futures):
+                objective = futures[future]
+                try:
+                    results[objective["objective_id"]] = future.result()
+                except Exception as exc:
+                    results[objective["objective_id"]] = {
+                        "engine": "executive_brain",
+                        "status": "failed",
+                        "reason": "objective_execution_error",
+                        "message": f"Objective execution failed: {exc}",
+                    }
+        return results
+
+    def _execute_objective_sync(
+        self,
+        objective: Dict[str, Any],
+        mission: str,
+        path: str,
+        mission_context: MissionExecutionContext,
+    ) -> Dict[str, Any]:
+        objective_id = objective["objective_id"]
+        event_bus.publish(
+            "MissionObjectiveStarted",
+            "executive_mission_controller",
+            {
+                "mission_id": mission_context.mission_id,
+                "mission": mission,
+                "objective_id": objective_id,
+                "objective": objective["objective"],
+                "result": "started",
+            },
+        )
+        return asyncio.run(
+            execute_objective(
+                {
+                    "objective": objective["objective"],
+                    "path": path,
+                    "mission_context": mission_context,
+                    "objective_id": objective_id,
+                }
+            )
+        )
 
     def decompose_mission(self, mission: str) -> List[Dict[str, Any]]:
         signal = mission.lower()
@@ -198,6 +360,42 @@ class MissionController:
                 }
             )
         return objectives
+
+    def _dependency_levels(self, objectives: List[Dict[str, Any]]) -> List[List[str]]:
+        remaining = {
+            objective["objective_id"]: set(objective.get("depends_on", []) or [])
+            for objective in objectives
+        }
+        levels = []
+        resolved = set()
+
+        while remaining:
+            ready = sorted(
+                objective_id
+                for objective_id, dependencies in remaining.items()
+                if dependencies.issubset(resolved)
+            )
+            if not ready:
+                levels.append(sorted(remaining.keys()))
+                break
+            levels.append(ready)
+            resolved.update(ready)
+            for objective_id in ready:
+                remaining.pop(objective_id, None)
+
+        return levels
+
+    def _dependencies_completed(self, objective: Dict[str, Any], completed_ids: set) -> bool:
+        return all(
+            dependency in completed_ids
+            for dependency in objective.get("depends_on", []) or []
+        )
+
+    def _dependencies_failed(self, objective: Dict[str, Any], failed_ids: set) -> bool:
+        return any(
+            dependency in failed_ids
+            for dependency in objective.get("depends_on", []) or []
+        )
 
     def evaluate_mission(
         self,
