@@ -164,30 +164,94 @@ def _build_plan(selected_plan: str) -> Dict[str, Any]:
     if selected_plan == "document_intelligence_plan":
         return {
             "steps": [
-                _step(1, "file_understanding_with_memory", "Prepare document context and store memory.", "low"),
-                _step(2, "executive_extraction", "Extract executive business information.", "low"),
-                _step(3, "obligation_extraction", "Identify obligations, requirements, and management actions.", "medium"),
-                _step(4, "risk_register", "Build a consolidated executive risk register.", "medium"),
-                _step(5, "executive_decision_brief", "Prepare decision-ready executive brief.", "medium"),
-                _step(6, "executive_action_plan", "Convert intelligence into a prioritized executive action plan.", "medium"),
+                _step(
+                    1,
+                    "file_understanding_with_memory",
+                    "Prepare document context and store memory.",
+                    "low",
+                    output_key="file_understanding_with_memory",
+                ),
+                _step(
+                    2,
+                    "executive_extraction",
+                    "Extract executive business information.",
+                    "low",
+                    required_inputs=["text"],
+                    output_key="executive_extraction",
+                    depends_on=["file_understanding_with_memory"],
+                ),
+                _step(
+                    3,
+                    "obligation_extraction",
+                    "Identify obligations, requirements, and management actions.",
+                    "medium",
+                    required_inputs=["text"],
+                    output_key="obligation_extraction",
+                    depends_on=["file_understanding_with_memory"],
+                ),
+                _step(
+                    4,
+                    "risk_register",
+                    "Build a consolidated executive risk register.",
+                    "medium",
+                    required_inputs=["text"],
+                    output_key="risk_register",
+                    depends_on=["file_understanding_with_memory"],
+                ),
+                _step(
+                    5,
+                    "executive_decision_brief",
+                    "Prepare decision-ready executive brief.",
+                    "medium",
+                    required_inputs=["text"],
+                    output_key="executive_decision_brief",
+                    depends_on=["file_understanding_with_memory"],
+                ),
+                _step(
+                    6,
+                    "executive_action_plan",
+                    "Convert intelligence into a prioritized executive action plan.",
+                    "medium",
+                    required_inputs=["text"],
+                    output_key="executive_action_plan",
+                    depends_on=["file_understanding_with_memory"],
+                ),
             ]
         }
 
     if selected_plan == "file_intelligence_plan":
         return {
             "steps": [
-                _step(1, "file_intelligence_loop", "Understand the file, remember it, search memory, plan, and evaluate.", "low"),
+                _step(
+                    1,
+                    "file_intelligence_loop",
+                    "Understand the file, remember it, search memory, plan, and evaluate.",
+                    "low",
+                    output_key="file_intelligence_loop",
+                ),
             ]
         }
 
     raise ValueError(f"Unsupported selected plan: {selected_plan}")
 
 
-def _step(order: int, capability: str, reason: str, risk: str) -> Dict[str, Any]:
+def _step(
+    order: int,
+    capability: str,
+    reason: str,
+    risk: str,
+    required_inputs: List[str] = None,
+    output_key: str = "",
+    depends_on: List[str] = None,
+) -> Dict[str, Any]:
     return {
         "order": order,
         "capability": capability,
+        "purpose": reason,
         "reason": reason,
+        "required_inputs": list(required_inputs or []),
+        "output_key": output_key or capability,
+        "depends_on": list(depends_on or []),
         "requires_approval": False,
         "risk": risk,
     }

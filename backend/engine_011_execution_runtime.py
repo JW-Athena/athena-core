@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Any, Dict, List
+from typing import Any, Callable, Dict, List
 
 from athena_memory_agent import AthenaMemoryAgent
 from athena_reasoning_agent import AthenaReasoningAgent
@@ -16,6 +16,38 @@ from timing_utils import new_request_context
 
 
 @dataclass
+class ExecutionPlanStep:
+    capability: str
+    order: int = 0
+    purpose: str = ""
+    required_inputs: List[str] = field(default_factory=list)
+    output_key: str = ""
+    depends_on: List[str] = field(default_factory=list)
+    critical: bool = False
+
+    @classmethod
+    def from_dict(cls, step: Dict[str, Any]) -> "ExecutionPlanStep":
+        capability = str(step.get("capability", "") or "").strip()
+        return cls(
+            capability=capability,
+            order=_safe_int(step.get("order", 0)),
+            purpose=str(step.get("purpose") or step.get("reason") or ""),
+            required_inputs=[
+                str(item)
+                for item in step.get("required_inputs", []) or []
+                if str(item or "").strip()
+            ],
+            output_key=str(step.get("output_key") or capability),
+            depends_on=[
+                str(item)
+                for item in step.get("depends_on", []) or []
+                if str(item or "").strip()
+            ],
+            critical=bool(step.get("critical", False)),
+        )
+
+
+@dataclass
 class ExecutionContext:
     objective: str
     path: str
@@ -25,6 +57,7 @@ class ExecutionContext:
     query: str = ""
     text: str = ""
     file_data: Dict[str, Any] = field(default_factory=dict)
+    results: Dict[str, Any] = field(default_factory=dict)
     request_context: Dict[str, Any] = field(default_factory=new_request_context)
 
 
@@ -59,6 +92,15 @@ class ExecutiveExecutionRuntime:
         self.risk_register_engine = RiskRegisterEngine()
         self.decision_brief_engine = ExecutiveDecisionBriefEngine()
         self.action_plan_engine = ExecutiveActionPlanEngine()
+        self.capability_handlers: Dict[str, Callable[[ExecutionContext, ExecutionPlanStep], Any]] = {
+            "file_intelligence_loop": self._handle_file_intelligence_loop,
+            "file_understanding_with_memory": self._handle_file_understanding_with_memory,
+            "executive_extraction": self._handle_executive_extraction,
+            "obligation_extraction": self._handle_obligation_extraction,
+            "risk_register": self._handle_risk_register,
+            "executive_decision_brief": self._handle_executive_decision_brief,
+            "executive_action_plan": self._handle_executive_action_plan,
+        }
 
     async def execute_plan(self, context: ExecutionContext) -> Dict[str, Any]:
         event_bus.publish(
@@ -76,11 +118,19 @@ class ExecutiveExecutionRuntime:
         results: Dict[str, Any] = {}
 
         try:
-            steps = context.execution_plan.get("steps", [])
-            for step in sorted(steps, key=lambda item: int(item.get("order", 0) or 0)):
+            steps = [
+                ExecutionPlanStep.from_dict(step)
+                for step in context.execution_plan.get("steps", [])
+                if isinstance(step, dict)
+            ]
+            for step in sorted(steps, key=lambda item: item.order):
                 capability_result = await self.execute_capability(context, step, results)
                 capability_results.append(capability_result)
-                results[capability_result.capability] = capability_result.to_dict()
+                output_key = step.output_key or capability_result.capability
+                results[output_key] = capability_result.to_dict()
+                context.results[output_key] = capability_result.to_dict()
+                if step.critical and capability_result.status != "success":
+                    break
 
             execution_status = self._execution_status(capability_results)
             response = {
@@ -96,6 +146,7 @@ class ExecutiveExecutionRuntime:
                 ],
                 "results": results,
                 "executive_response": self._executive_response(results),
+                "plan_driven": True,
             }
 
             event_bus.publish(
@@ -139,15 +190,16 @@ class ExecutiveExecutionRuntime:
                     "requires_approval": False,
                 },
                 "reason": "execution_runtime_error",
+                "plan_driven": True,
             }
 
     async def execute_capability(
         self,
         context: ExecutionContext,
-        step: Dict[str, Any],
+        step: ExecutionPlanStep,
         results: Dict[str, Any],
     ) -> CapabilityExecutionResult:
-        capability = str(step.get("capability", "") or "").strip()
+        capability = step.capability
         event_bus.publish(
             "CapabilityExecutionStarted",
             "executive_brain",
@@ -155,13 +207,18 @@ class ExecutiveExecutionRuntime:
                 "objective": context.objective,
                 "selected_plan": context.selected_plan,
                 "capability": capability,
-                "order": step.get("order", 0),
+                "order": step.order,
                 "result": "started",
             },
         )
 
         try:
-            result = await self._execute_supported_capability(context, capability, results)
+            skip_result = self._dependency_or_input_skip(context, step)
+            if skip_result:
+                self._publish_capability_skipped(context, step, skip_result)
+                return skip_result
+
+            result = await self._execute_supported_capability(context, step)
             if result.status == "success":
                 event_bus.publish(
                     "CapabilityExecutionCompleted",
@@ -173,6 +230,8 @@ class ExecutiveExecutionRuntime:
                         "result": "success",
                     },
                 )
+            elif result.status == "skipped":
+                self._publish_capability_skipped(context, step, result)
             else:
                 event_bus.publish(
                     "CapabilityExecutionFailed",
@@ -209,101 +268,118 @@ class ExecutiveExecutionRuntime:
     async def _execute_supported_capability(
         self,
         context: ExecutionContext,
-        capability: str,
-        results: Dict[str, Any],
+        step: ExecutionPlanStep,
     ) -> CapabilityExecutionResult:
-        if capability == "file_intelligence_loop":
-            result = await file_intelligence_loop(
-                {
-                    "path": context.path,
-                    "query": context.query or context.objective,
-                }
-            )
-            return self._capability_result(capability, result)
-
-        if capability == "file_understanding_with_memory":
-            result = self.workflow_agent.file_understanding_with_memory(
-                desktop_agent=desktop_agent,
-                reasoning_agent=self.reasoning_agent,
-                memory_agent=self.memory_agent,
-                path=context.path,
-            )
-            if result.get("status") == "success":
-                workflow = result.get("workflow", {})
-                context.file_data = workflow.get("file", {})
-                read_result = desktop_agent.read_file(context.path)
-                if read_result.get("status") == "success":
-                    context.text = read_result.get("file", {}).get("content", "")
-                else:
-                    return CapabilityExecutionResult(
-                        capability=capability,
-                        status="failed",
-                        result=result,
-                        reason=read_result.get("reason", "read_error"),
-                        message=read_result.get("message", "Safe file read failed."),
-                    )
-            return self._capability_result(capability, result)
-
-        if not context.text and capability in {
-            "executive_extraction",
-            "obligation_extraction",
-            "risk_register",
-            "executive_decision_brief",
-            "executive_action_plan",
-        }:
-            return CapabilityExecutionResult(
-                capability=capability,
-                status="skipped",
-                reason="missing_document_text",
-                message="Document text is not available from an earlier capability.",
-            )
-
-        if capability == "executive_extraction":
-            result = self.executive_extractor.extract(
-                text=context.text,
-                document_type=context.document_type or None,
-            )
-            context.request_context["cache"]["executive_information.extract"] = result
-            return CapabilityExecutionResult(capability=capability, status="success", result=result)
-
-        if capability == "obligation_extraction":
-            result = self.obligation_extractor.extract(
-                text=context.text,
-                document_type=context.document_type or None,
-            )
-            context.request_context["cache"]["obligation_extraction.extract"] = result
-            return CapabilityExecutionResult(capability=capability, status="success", result=result)
-
-        if capability == "risk_register":
-            result = self.risk_register_engine.generate(
-                text=context.text,
-                document_type=context.document_type or None,
-                request_context=context.request_context,
-            )
-            return self._capability_result(capability, result, result_key="risk_register")
-
-        if capability == "executive_decision_brief":
-            result = self.decision_brief_engine.generate(
-                text=context.text,
-                document_type=context.document_type or None,
-                request_context=context.request_context,
-            )
-            return self._capability_result(capability, result, result_key="brief")
-
-        if capability == "executive_action_plan":
-            result = self.action_plan_engine.generate(
-                text=context.text,
-                document_type=context.document_type or None,
-                request_context=context.request_context,
-            )
-            return self._capability_result(capability, result, result_key="action_plan")
+        handler = self.capability_handlers.get(step.capability)
+        if handler:
+            return await handler(context, step)
 
         return CapabilityExecutionResult(
-            capability=capability,
+            capability=step.capability,
             status="unsupported",
             reason="unsupported_capability",
             message="No runtime executor is registered for this capability.",
         )
+
+    async def _handle_file_intelligence_loop(
+        self,
+        context: ExecutionContext,
+        step: ExecutionPlanStep,
+    ) -> CapabilityExecutionResult:
+        result = await file_intelligence_loop(
+            {
+                "path": context.path,
+                "query": context.query or context.objective,
+            }
+        )
+        return self._capability_result(step.capability, result)
+
+    async def _handle_file_understanding_with_memory(
+        self,
+        context: ExecutionContext,
+        step: ExecutionPlanStep,
+    ) -> CapabilityExecutionResult:
+        result = self.workflow_agent.file_understanding_with_memory(
+            desktop_agent=desktop_agent,
+            reasoning_agent=self.reasoning_agent,
+            memory_agent=self.memory_agent,
+            path=context.path,
+        )
+        if result.get("status") == "success":
+            workflow = result.get("workflow", {})
+            context.file_data = workflow.get("file", {})
+            read_result = desktop_agent.read_file(context.path)
+            if read_result.get("status") == "success":
+                context.text = read_result.get("file", {}).get("content", "")
+            else:
+                return CapabilityExecutionResult(
+                    capability=step.capability,
+                    status="failed",
+                    result=result,
+                    reason=read_result.get("reason", "read_error"),
+                    message=read_result.get("message", "Safe file read failed."),
+                )
+        return self._capability_result(step.capability, result)
+
+    async def _handle_executive_extraction(
+        self,
+        context: ExecutionContext,
+        step: ExecutionPlanStep,
+    ) -> CapabilityExecutionResult:
+        result = self.executive_extractor.extract(
+            text=context.text,
+            document_type=context.document_type or None,
+        )
+        context.request_context["cache"]["executive_information.extract"] = result
+        return CapabilityExecutionResult(capability=step.capability, status="success", result=result)
+
+    async def _handle_obligation_extraction(
+        self,
+        context: ExecutionContext,
+        step: ExecutionPlanStep,
+    ) -> CapabilityExecutionResult:
+        result = self.obligation_extractor.extract(
+            text=context.text,
+            document_type=context.document_type or None,
+        )
+        context.request_context["cache"]["obligation_extraction.extract"] = result
+        return CapabilityExecutionResult(capability=step.capability, status="success", result=result)
+
+    async def _handle_risk_register(
+        self,
+        context: ExecutionContext,
+        step: ExecutionPlanStep,
+    ) -> CapabilityExecutionResult:
+        result = self.risk_register_engine.generate(
+            text=context.text,
+            document_type=context.document_type or None,
+            request_context=context.request_context,
+        )
+        return self._capability_result(step.capability, result, result_key="risk_register")
+
+    async def _handle_executive_decision_brief(
+        self,
+        context: ExecutionContext,
+        step: ExecutionPlanStep,
+    ) -> CapabilityExecutionResult:
+        result = self.decision_brief_engine.generate(
+            text=context.text,
+            document_type=context.document_type or None,
+            request_context=context.request_context,
+        )
+        return self._capability_result(step.capability, result, result_key="brief")
+
+    async def _handle_executive_action_plan(
+        self,
+        context: ExecutionContext,
+        step: ExecutionPlanStep,
+    ) -> CapabilityExecutionResult:
+        result = self.action_plan_engine.generate(
+            text=context.text,
+            document_type=context.document_type or None,
+            request_context=context.request_context,
+        )
+        return self._capability_result(step.capability, result, result_key="action_plan")
 
     def _capability_result(
         self,
@@ -345,6 +421,64 @@ class ExecutiveExecutionRuntime:
         if any(result.status in {"skipped", "unsupported"} for result in capability_results):
             return "completed_with_skips"
         return "completed"
+
+    def _dependency_or_input_skip(
+        self,
+        context: ExecutionContext,
+        step: ExecutionPlanStep,
+    ) -> CapabilityExecutionResult:
+        for dependency in step.depends_on:
+            dependency_result = context.results.get(dependency, {})
+            if not dependency_result:
+                return CapabilityExecutionResult(
+                    capability=step.capability,
+                    status="skipped",
+                    reason="missing_dependency",
+                    message=f"Required dependency result is missing: {dependency}.",
+                )
+            if dependency_result.get("status") != "success":
+                return CapabilityExecutionResult(
+                    capability=step.capability,
+                    status="skipped",
+                    reason="dependency_failed",
+                    message=f"Required dependency did not succeed: {dependency}.",
+                )
+
+        for required_input in step.required_inputs:
+            if required_input == "text" and not context.text:
+                return CapabilityExecutionResult(
+                    capability=step.capability,
+                    status="skipped",
+                    reason="missing_document_text",
+                    message="Document text is not available from an earlier capability.",
+                )
+            if required_input == "file" and not context.file_data:
+                return CapabilityExecutionResult(
+                    capability=step.capability,
+                    status="skipped",
+                    reason="missing_file_context",
+                    message="File context is not available from an earlier capability.",
+                )
+
+        return None
+
+    def _publish_capability_skipped(
+        self,
+        context: ExecutionContext,
+        step: ExecutionPlanStep,
+        result: CapabilityExecutionResult,
+    ) -> None:
+        event_bus.publish(
+            "CapabilityExecutionSkipped",
+            "executive_brain",
+            {
+                "objective": context.objective,
+                "selected_plan": context.selected_plan,
+                "capability": step.capability,
+                "reason": result.reason,
+                "result": "skipped",
+            },
+        )
 
     def _executive_response(self, results: Dict[str, Any]) -> Dict[str, Any]:
         action_plan = self._result_payload(results, "executive_action_plan")
@@ -414,3 +548,10 @@ class ExecutiveExecutionRuntime:
             if text:
                 return text
         return ""
+
+
+def _safe_int(value: Any) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
