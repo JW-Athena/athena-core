@@ -23,6 +23,7 @@ class OperationsCenter:
         learning = execution_learning_engine.list_learning_records()
         approvals = self._approval_records()
         events = event_bus.latest(limit=100)
+        timeline = self.get_operations_timeline(limit=100, publish_event=False)
         execution = self._execution_totals(missions)
         objective_types = adaptive_summary().get("objective_types", {})
         successful_patterns = execution_learning_engine.find_successful_patterns().get("count", 0)
@@ -51,6 +52,11 @@ class OperationsCenter:
             },
             "event_bus": {
                 "events": len(events),
+            },
+            "timeline": {
+                "recent_events": timeline.get("count", 0),
+                "errors": len([item for item in timeline.get("timeline", []) if item.get("severity") == "error"]),
+                "warnings": len([item for item in timeline.get("timeline", []) if item.get("severity") == "warning"]),
             },
             "statistics": {
                 "uptime": self._uptime(),
@@ -123,6 +129,97 @@ class OperationsCenter:
             "count": len(events),
             "events": events,
         }
+
+    def get_operations_timeline(self, limit: int = 50, publish_event: bool = True) -> Dict[str, Any]:
+        if publish_event:
+            event_bus.publish(
+                "OperationsTimelineRequested",
+                "operations_center",
+                {"limit": limit, "result": "success"},
+            )
+        safe_limit = max(1, min(int(limit or 50), 250))
+        events = event_bus.latest(limit=safe_limit)
+        events.reverse()
+        timeline = [self._timeline_item(event) for event in events]
+        return {
+            "engine": "operations_center",
+            "status": "success",
+            "count": len(timeline),
+            "timeline": timeline,
+        }
+
+    def _timeline_item(self, event: Dict[str, Any]) -> Dict[str, Any]:
+        event_type = str(event.get("event_type", "") or "")
+        payload = event.get("payload", {}) or {}
+        return {
+            "timestamp": event.get("timestamp", ""),
+            "event_type": event_type,
+            "source": event.get("source", ""),
+            "category": self._event_category(event_type),
+            "severity": self._event_severity(event_type),
+            "title": self._event_title(event_type),
+            "summary": self._event_summary(payload),
+            "payload": payload,
+        }
+
+    def _event_category(self, event_type: str) -> str:
+        if event_type.startswith("MissionExecution") or event_type.startswith("MissionObjective") or event_type.startswith("MissionDependency") or event_type.startswith("MissionParallel"):
+            return "mission"
+        if event_type.startswith("BrainObjective"):
+            return "objective"
+        if event_type.startswith("CapabilityExecution"):
+            return "capability"
+        if event_type.startswith("MissionApproval") or event_type in {"MissionApproved", "MissionRejected", "MissionResumed"}:
+            return "approval"
+        if event_type in {"ExecutionLearned", "ExecutionLearningFailed"}:
+            return "learning"
+        if event_type.startswith("AdaptivePlanning") or event_type.startswith("ExecutiveExecutionPlan"):
+            return "planning"
+        return "system"
+
+    def _event_severity(self, event_type: str) -> str:
+        if "Failed" in event_type:
+            return "error"
+        if "Required" in event_type or "Pending" in event_type:
+            return "warning"
+        return "info"
+
+    def _event_title(self, event_type: str) -> str:
+        special_titles = {
+            "MissionExecutionStarted": "Mission execution started",
+            "MissionExecutionCompleted": "Mission execution completed",
+            "MissionExecutionFailed": "Mission execution failed",
+            "MissionApprovalRequired": "Mission approval required",
+            "MissionApproved": "Mission approved",
+            "MissionRejected": "Mission rejected",
+            "MissionResumed": "Mission resumed",
+            "CapabilityExecutionCompleted": "Capability completed",
+            "CapabilityExecutionFailed": "Capability failed",
+            "ExecutionLearned": "Execution learned",
+            "OperationsTimelineRequested": "Operations timeline requested",
+        }
+        if event_type in special_titles:
+            return special_titles[event_type]
+        words = []
+        current = ""
+        for char in event_type:
+            if char.isupper() and current:
+                words.append(current)
+                current = char
+            else:
+                current += char
+        if current:
+            words.append(current)
+        title = " ".join(words).strip()
+        return title[:1].upper() + title[1:].lower() if title else "System event"
+
+    def _event_summary(self, payload: Dict[str, Any]) -> str:
+        parts = []
+        for key in ["mission", "objective", "capability", "selected_plan", "result", "reason"]:
+            value = str(payload.get(key, "") or "").strip()
+            if value:
+                parts.append(f"{key}: {value}")
+        return "; ".join(parts) if parts else "ATHENA event recorded."
 
     def _execution_totals(self, missions: List[Dict[str, Any]]) -> Dict[str, int]:
         totals = {

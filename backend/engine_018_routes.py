@@ -24,3 +24,8 @@ async def operations_live_missions():
 @router.get("/athena/operations/live-events")
 async def operations_live_events(limit: int = Query(default=100, ge=1, le=250)):
     return operations_center.live_events(limit=limit)
+
+
+@router.get("/athena/operations/timeline")
+async def operations_timeline(limit: int = Query(default=50, ge=1, le=250)):
+    return operations_center.get_operations_timeline(limit=limit)
