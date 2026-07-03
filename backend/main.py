@@ -32,6 +32,7 @@ from executive_objective_routes import router as executive_objective_router
 from executive_execution_plan_routes import router as executive_execution_plan_router
 from engine_011_routes import router as engine_011_router
 from engine_013_routes import router as engine_013_router
+from engine_014_routes import router as engine_014_router
 
 
 app = FastAPI(
@@ -93,6 +94,7 @@ app.include_router(executive_objective_router)
 app.include_router(executive_execution_plan_router)
 app.include_router(engine_011_router)
 app.include_router(engine_013_router)
+app.include_router(engine_014_router)
 
 
 if __name__ == "__main__":

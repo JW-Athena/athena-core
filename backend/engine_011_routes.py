@@ -3,6 +3,7 @@ from typing import Any, Dict
 from fastapi import APIRouter, Body
 
 from engine_011_execution_runtime import ExecutionContext, ExecutiveExecutionRuntime
+from engine_014_adaptive_planner import build_adaptive_plan
 from event_bus import event_bus
 from executive_execution_plan_routes import build_execution_plan
 
@@ -17,8 +18,13 @@ async def execute_objective(payload: Dict[str, Any] = Body(default_factory=dict)
     path = str(payload.get("path", "") or "").strip()
 
     plan_result = payload.get("execution_plan_result")
+    adaptive_planning = None
     if not isinstance(plan_result, dict):
-        plan_result = await build_execution_plan(payload)
+        adaptive_planning = await build_adaptive_plan(objective=objective, path=path)
+        if isinstance(adaptive_planning, dict) and adaptive_planning.get("status") == "success":
+            plan_result = adaptive_planning.get("plan", {})
+        else:
+            plan_result = await build_execution_plan(payload)
 
     if not isinstance(plan_result, dict) or plan_result.get("status") != "success":
         reason = plan_result.get("reason", "planning_error") if isinstance(plan_result, dict) else "planning_error"
@@ -57,4 +63,7 @@ async def execute_objective(payload: Dict[str, Any] = Body(default_factory=dict)
         query=str(payload.get("query", "") or ""),
     )
 
-    return await runtime.execute_plan(context)
+    response = await runtime.execute_plan(context)
+    if adaptive_planning is not None and isinstance(response, dict):
+        response["adaptive_planning"] = adaptive_planning
+    return response
