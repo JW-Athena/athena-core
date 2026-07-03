@@ -61,6 +61,8 @@ class ExecutionContext:
     file_data: Dict[str, Any] = field(default_factory=dict)
     results: Dict[str, Any] = field(default_factory=dict)
     request_context: Dict[str, Any] = field(default_factory=new_request_context)
+    mission_context: Any = None
+    objective_id: str = ""
 
 
 @dataclass
@@ -222,7 +224,10 @@ class ExecutiveExecutionRuntime:
                 self._publish_capability_skipped(context, step, skip_result)
                 return skip_result
 
-            result = await self._execute_supported_capability(context, step)
+            result = self._mission_cache_result(context, step)
+            if not result:
+                result = await self._execute_supported_capability(context, step)
+                self._store_mission_cache_result(context, step, result)
             if result.status == "success":
                 event_bus.publish(
                     "CapabilityExecutionCompleted",
@@ -315,6 +320,9 @@ class ExecutiveExecutionRuntime:
             read_result = desktop_agent.read_file(context.path)
             if read_result.get("status") == "success":
                 context.text = read_result.get("file", {}).get("content", "")
+                if context.mission_context:
+                    context.mission_context.shared_outputs["text"] = context.text
+                    context.mission_context.shared_outputs["file_data"] = context.file_data
             else:
                 return CapabilityExecutionResult(
                     capability=step.capability,
@@ -415,6 +423,50 @@ class ExecutiveExecutionRuntime:
             status="success",
             result=normalized if isinstance(normalized, dict) else result,
             message=result.get("message", ""),
+        )
+
+    def _mission_cache_result(
+        self,
+        context: ExecutionContext,
+        step: ExecutionPlanStep,
+    ) -> CapabilityExecutionResult:
+        if not context.mission_context:
+            return None
+
+        cached = context.mission_context.cache_hit(
+            capability=step.capability,
+            objective_id=context.objective_id,
+        )
+        if not cached:
+            return None
+
+        shared_text = context.mission_context.shared_outputs.get("text")
+        shared_file = context.mission_context.shared_outputs.get("file_data")
+        if shared_text and not context.text:
+            context.text = shared_text
+        if shared_file and not context.file_data:
+            context.file_data = shared_file
+
+        return CapabilityExecutionResult(
+            capability=str(cached.get("capability") or step.capability),
+            status=str(cached.get("status") or "success"),
+            result=cached.get("result", {}) if isinstance(cached.get("result", {}), dict) else {},
+            reason=str(cached.get("reason", "") or ""),
+            message=str(cached.get("message", "Reused from mission context cache.") or ""),
+        )
+
+    def _store_mission_cache_result(
+        self,
+        context: ExecutionContext,
+        step: ExecutionPlanStep,
+        result: CapabilityExecutionResult,
+    ) -> None:
+        if not context.mission_context or result.status != "success":
+            return
+        context.mission_context.store_capability_result(
+            capability=step.capability,
+            result=result.to_dict(),
+            objective_id=context.objective_id,
         )
 
     def _execution_status(self, capability_results: List[CapabilityExecutionResult]) -> str:

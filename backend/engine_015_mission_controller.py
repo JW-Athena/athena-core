@@ -2,6 +2,7 @@ from typing import Any, Dict, List
 
 from engine_011_routes import execute_objective
 from engine_013_learning_engine import execution_learning_engine
+from engine_016_mission_context import MissionExecutionContext
 from event_bus import event_bus
 
 
@@ -9,11 +10,15 @@ class MissionController:
     async def execute_mission(self, mission: str, path: str = "") -> Dict[str, Any]:
         clean_mission = str(mission or "").strip()
         objectives = self.decompose_mission(clean_mission)
+        mission_context = MissionExecutionContext()
+        mission_context.metadata["mission"] = clean_mission
+        mission_context.metadata["path"] = path
 
         event_bus.publish(
             "MissionExecutionStarted",
             "executive_mission_controller",
             {
+                "mission_id": mission_context.mission_id,
                 "mission": clean_mission,
                 "objectives_total": len(objectives),
                 "result": "started",
@@ -31,6 +36,7 @@ class MissionController:
                 "MissionObjectiveStarted",
                 "executive_mission_controller",
                 {
+                    "mission_id": mission_context.mission_id,
                     "mission": clean_mission,
                     "objective_id": objective_id,
                     "objective": objective["objective"],
@@ -42,9 +48,12 @@ class MissionController:
                 {
                     "objective": objective["objective"],
                     "path": path,
+                    "mission_context": mission_context,
+                    "objective_id": objective_id,
                 }
             )
             objective_results[objective_id] = result
+            mission_context.store_objective_result(objective_id, result)
 
             if isinstance(result, dict) and result.get("status") == "success":
                 objective["status"] = "completed"
@@ -53,6 +62,7 @@ class MissionController:
                     "MissionObjectiveCompleted",
                     "executive_mission_controller",
                     {
+                        "mission_id": mission_context.mission_id,
                         "mission": clean_mission,
                         "objective_id": objective_id,
                         "objective": objective["objective"],
@@ -66,6 +76,7 @@ class MissionController:
                     "MissionObjectiveFailed",
                     "executive_mission_controller",
                     {
+                        "mission_id": mission_context.mission_id,
                         "mission": clean_mission,
                         "objective_id": objective_id,
                         "objective": objective["objective"],
@@ -99,6 +110,7 @@ class MissionController:
             "objectives_failed": failed,
             "objectives": objectives,
             "objective_results": objective_results,
+            "mission_statistics": mission_context.statistics(),
             "mission_evaluation": mission_evaluation,
             "executive_response": {
                 "summary": mission_evaluation.get("summary", ""),
@@ -112,6 +124,7 @@ class MissionController:
             event_type,
             "executive_mission_controller",
             {
+                "mission_id": mission_context.mission_id,
                 "mission": clean_mission,
                 "mission_status": mission_status,
                 "objectives_total": len(objectives),

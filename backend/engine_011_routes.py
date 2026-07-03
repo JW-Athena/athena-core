@@ -61,6 +61,8 @@ async def execute_objective(payload: Dict[str, Any] = Body(default_factory=dict)
         execution_plan=plan_result.get("execution_plan", {}),
         document_type=str(payload.get("document_type", "") or ""),
         query=str(payload.get("query", "") or ""),
+        mission_context=payload.get("mission_context"),
+        objective_id=str(payload.get("objective_id", "") or ""),
     )
 
     response = await runtime.execute_plan(context)
