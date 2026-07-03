@@ -3,6 +3,7 @@ from typing import Any, Dict, List
 from engine_011_routes import execute_objective
 from engine_013_learning_engine import execution_learning_engine
 from engine_016_mission_context import MissionExecutionContext
+from engine_017_approval_workflow import approval_workflow
 from event_bus import event_bus
 
 
@@ -100,6 +101,22 @@ class MissionController:
             objectives=objectives,
             objective_results=objective_results,
         )
+        approval_request = {}
+        approval_required = bool(mission_evaluation.get("approval_required", False))
+        if approval_required:
+            mission_status = "pending_approval"
+            approval_request = approval_workflow.create_approval_request(
+                mission_id=mission_context.mission_id,
+                mission=clean_mission,
+                reason=mission_evaluation.get("summary", "Executive approval is required."),
+                required_action=mission_evaluation.get("recommended_next_action", "Review and approve mission outcome."),
+                approval_payload={
+                    "mission_evaluation": mission_evaluation,
+                    "mission_statistics": mission_context.statistics(),
+                    "objectives": objectives,
+                },
+            )
+
         response = {
             "engine": "executive_mission_controller",
             "status": "success" if mission_status != "failed" else "failed",
@@ -112,10 +129,12 @@ class MissionController:
             "objective_results": objective_results,
             "mission_statistics": mission_context.statistics(),
             "mission_evaluation": mission_evaluation,
+            "approval_required": approval_required,
+            "approval_request": approval_request,
             "executive_response": {
                 "summary": mission_evaluation.get("summary", ""),
                 "recommended_next_action": mission_evaluation.get("recommended_next_action", ""),
-                "requires_approval": bool(mission_evaluation.get("approval_required", False)),
+                "requires_approval": approval_required,
             },
         }
 
