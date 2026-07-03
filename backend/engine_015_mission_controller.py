@@ -1,0 +1,299 @@
+from typing import Any, Dict, List
+
+from engine_011_routes import execute_objective
+from engine_013_learning_engine import execution_learning_engine
+from event_bus import event_bus
+
+
+class MissionController:
+    async def execute_mission(self, mission: str, path: str = "") -> Dict[str, Any]:
+        clean_mission = str(mission or "").strip()
+        objectives = self.decompose_mission(clean_mission)
+
+        event_bus.publish(
+            "MissionExecutionStarted",
+            "executive_mission_controller",
+            {
+                "mission": clean_mission,
+                "objectives_total": len(objectives),
+                "result": "started",
+            },
+        )
+
+        objective_results: Dict[str, Any] = {}
+        completed = 0
+        failed = 0
+        stopped = False
+
+        for objective in objectives:
+            objective_id = objective["objective_id"]
+            event_bus.publish(
+                "MissionObjectiveStarted",
+                "executive_mission_controller",
+                {
+                    "mission": clean_mission,
+                    "objective_id": objective_id,
+                    "objective": objective["objective"],
+                    "result": "started",
+                },
+            )
+
+            result = await execute_objective(
+                {
+                    "objective": objective["objective"],
+                    "path": path,
+                }
+            )
+            objective_results[objective_id] = result
+
+            if isinstance(result, dict) and result.get("status") == "success":
+                objective["status"] = "completed"
+                completed += 1
+                event_bus.publish(
+                    "MissionObjectiveCompleted",
+                    "executive_mission_controller",
+                    {
+                        "mission": clean_mission,
+                        "objective_id": objective_id,
+                        "objective": objective["objective"],
+                        "result": "success",
+                    },
+                )
+            else:
+                objective["status"] = "failed"
+                failed += 1
+                event_bus.publish(
+                    "MissionObjectiveFailed",
+                    "executive_mission_controller",
+                    {
+                        "mission": clean_mission,
+                        "objective_id": objective_id,
+                        "objective": objective["objective"],
+                        "reason": result.get("reason", "objective_execution_failed") if isinstance(result, dict) else "objective_execution_failed",
+                        "result": "failed",
+                    },
+                )
+                if objective.get("critical"):
+                    stopped = True
+                    break
+
+        mission_status = self._mission_status(
+            completed=completed,
+            failed=failed,
+            objectives_total=len(objectives),
+            stopped=stopped,
+        )
+        mission_evaluation = self.evaluate_mission(
+            mission=clean_mission,
+            mission_status=mission_status,
+            objectives=objectives,
+            objective_results=objective_results,
+        )
+        response = {
+            "engine": "executive_mission_controller",
+            "status": "success" if mission_status != "failed" else "failed",
+            "mission": clean_mission,
+            "mission_status": mission_status,
+            "objectives_total": len(objectives),
+            "objectives_completed": completed,
+            "objectives_failed": failed,
+            "objectives": objectives,
+            "objective_results": objective_results,
+            "mission_evaluation": mission_evaluation,
+            "executive_response": {
+                "summary": mission_evaluation.get("summary", ""),
+                "recommended_next_action": mission_evaluation.get("recommended_next_action", ""),
+                "requires_approval": bool(mission_evaluation.get("approval_required", False)),
+            },
+        }
+
+        event_type = "MissionExecutionCompleted" if response["status"] == "success" else "MissionExecutionFailed"
+        event_bus.publish(
+            event_type,
+            "executive_mission_controller",
+            {
+                "mission": clean_mission,
+                "mission_status": mission_status,
+                "objectives_total": len(objectives),
+                "objectives_completed": completed,
+                "objectives_failed": failed,
+                "result": response["status"],
+            },
+        )
+        return response
+
+    def decompose_mission(self, mission: str) -> List[Dict[str, Any]]:
+        signal = mission.lower()
+        if "tender" in signal:
+            objective_texts = [
+                "Analyze this tender and prepare an executive summary",
+                "Identify tender obligations and required documents",
+                "Build a tender risk register",
+                "Prepare an executive action plan",
+                "Prepare an executive decision brief",
+            ]
+        elif "contract" in signal:
+            objective_texts = [
+                "Analyze this contract document and extract key terms",
+                "Identify contract obligations and liabilities",
+                "Build a contract risk register for this document",
+                "Prepare an executive decision brief",
+                "Prepare an executive action plan",
+            ]
+        elif "supplier" in signal:
+            objective_texts = [
+                "Analyze this supplier document and prepare an executive summary",
+                "Identify supplier risks",
+                "Prepare supplier executive action plan",
+            ]
+        else:
+            objective_texts = [
+                "Analyze this document and prepare an executive summary",
+                "Identify risks",
+                "Prepare executive action plan",
+            ]
+
+        objectives = []
+        for index, objective in enumerate(objective_texts, start=1):
+            objectives.append(
+                {
+                    "objective_id": f"OBJ-{index:03d}",
+                    "objective": objective,
+                    "objective_type": execution_learning_engine._objective_type(objective),
+                    "status": "pending",
+                    "depends_on": [] if index == 1 else [f"OBJ-{index - 1:03d}"],
+                    "critical": index == 1,
+                }
+            )
+        return objectives
+
+    def evaluate_mission(
+        self,
+        mission: str,
+        mission_status: str,
+        objectives: List[Dict[str, Any]],
+        objective_results: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        evaluations = []
+        critical_blockers = []
+        missing_information = []
+        approval_required = False
+
+        for objective in objectives:
+            result = objective_results.get(objective["objective_id"], {})
+            evaluation = result.get("execution_evaluation", {}) if isinstance(result, dict) else {}
+            if evaluation:
+                evaluations.append(evaluation)
+                missing_information.extend(evaluation.get("missing_information", []) or [])
+                approval_required = approval_required or bool(evaluation.get("approval_required", False))
+                if not evaluation.get("objective_satisfied", False) and objective.get("critical"):
+                    critical_blockers.append(objective["objective"])
+            elif objective.get("status") == "failed":
+                critical_blockers.append(objective["objective"])
+
+        decision_ready = bool(evaluations) and all(
+            bool(evaluation.get("decision_ready", False))
+            for evaluation in evaluations
+        )
+        confidence = self._average_confidence(evaluations, mission_status)
+        mission_satisfied = (
+            mission_status == "completed"
+            and bool(evaluations)
+            and all(bool(evaluation.get("objective_satisfied", False)) for evaluation in evaluations)
+        )
+        recommended_next_action = self._recommended_next_action(
+            evaluations=evaluations,
+            missing_information=missing_information,
+            critical_blockers=critical_blockers,
+            decision_ready=decision_ready,
+            approval_required=approval_required,
+        )
+
+        return {
+            "mission_satisfied": mission_satisfied,
+            "decision_ready": decision_ready,
+            "confidence": confidence,
+            "approval_required": approval_required,
+            "critical_blockers": self._dedupe(critical_blockers),
+            "missing_information": self._dedupe(missing_information),
+            "recommended_next_action": recommended_next_action,
+            "summary": self._summary(
+                mission=mission,
+                mission_satisfied=mission_satisfied,
+                decision_ready=decision_ready,
+                confidence=confidence,
+                critical_blockers=critical_blockers,
+                missing_information=missing_information,
+            ),
+        }
+
+    def _mission_status(self, completed: int, failed: int, objectives_total: int, stopped: bool) -> str:
+        if stopped or (failed and completed == 0):
+            return "failed"
+        if completed == objectives_total and failed == 0:
+            return "completed"
+        return "partial"
+
+    def _average_confidence(self, evaluations: List[Dict[str, Any]], mission_status: str) -> int:
+        if not evaluations:
+            return 0
+        confidence = round(
+            sum(int(evaluation.get("confidence", 0) or 0) for evaluation in evaluations) / len(evaluations)
+        )
+        if mission_status == "partial":
+            confidence = min(confidence, 65)
+        if mission_status == "failed":
+            confidence = min(confidence, 35)
+        return max(0, min(100, confidence))
+
+    def _recommended_next_action(
+        self,
+        evaluations: List[Dict[str, Any]],
+        missing_information: List[str],
+        critical_blockers: List[str],
+        decision_ready: bool,
+        approval_required: bool,
+    ) -> str:
+        if critical_blockers:
+            return f"Resolve critical blocker: {critical_blockers[0]}."
+        if missing_information:
+            return f"Resolve missing information: {missing_information[0]}."
+        if decision_ready and approval_required:
+            return "Proceed to executive approval review."
+        if decision_ready:
+            return "Proceed with the coordinated mission action plan."
+        for evaluation in evaluations:
+            action = str(evaluation.get("recommended_next_action", "") or "").strip()
+            if action:
+                return action
+        return "Review mission objective results and assign accountable owners."
+
+    def _summary(
+        self,
+        mission: str,
+        mission_satisfied: bool,
+        decision_ready: bool,
+        confidence: int,
+        critical_blockers: List[str],
+        missing_information: List[str],
+    ) -> str:
+        if mission_satisfied and decision_ready:
+            return "Mission completed and is decision-ready."
+        if mission_satisfied:
+            return "Mission objectives were executed, but final decision readiness remains conditional."
+        if critical_blockers:
+            return "Mission execution found critical blockers that must be resolved."
+        if missing_information:
+            return "Mission execution completed with missing information that prevents full satisfaction."
+        return f"Mission execution completed with confidence {confidence}."
+
+    def _dedupe(self, values: List[Any]) -> List[str]:
+        deduped = []
+        for value in values:
+            text = str(value or "").strip()
+            if text and text not in deduped:
+                deduped.append(text)
+        return deduped
+
+
+mission_controller = MissionController()
