@@ -9,6 +9,7 @@ from capability_005_obligation_extraction import ObligationExtractor
 from desktop_agent import desktop_agent
 from event_bus import event_bus
 from engine_012_execution_evaluator import evaluate_execution
+from engine_013_learning_engine import learn_from_execution
 from executive_action_plan_engine import ExecutiveActionPlanEngine
 from executive_decision_brief_engine import ExecutiveDecisionBriefEngine
 from executive_file_intelligence_loop_routes import file_intelligence_loop
@@ -150,6 +151,7 @@ class ExecutiveExecutionRuntime:
                 "plan_driven": True,
             }
             response["execution_evaluation"] = self._evaluate_execution(response)
+            response["execution_learning"] = learn_from_execution(response)
 
             event_bus.publish(
                 "BrainObjectiveExecutionCompleted",
