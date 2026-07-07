@@ -78,6 +78,58 @@ export type SupplierExecutiveResponse = {
   executive_brief?: Record<string, unknown>;
 };
 
+export type ContractExecutiveResponse = {
+  engine?: string;
+  status?: string;
+  executive_summary?: string;
+  contract_decision?: "Approve" | "Review" | "Reject" | string;
+  confidence?: number;
+  risk_level?: string;
+  key_risks?: string[];
+  missing_information?: string[];
+  recommended_actions?: string[];
+  executive_reasoning?: string;
+};
+
+export type ProcurementExecutiveResponse = {
+  engine?: string;
+  status?: string;
+  executive_summary?: string;
+  procurement_decision?: "Proceed" | "Review" | "Hold" | "Reject" | string;
+  confidence?: number;
+  supplier_risk?: string;
+  commercial_risk?: string;
+  required_departments?: string[];
+  recommended_actions?: string[];
+  executive_reasoning?: string;
+};
+
+export type MeetingExecutiveResponse = {
+  engine?: string;
+  status?: string;
+  executive_summary?: string;
+  meeting_objective?: string;
+  agenda?: string[];
+  key_talking_points?: string[];
+  risks_to_raise?: string[];
+  questions_to_ask?: string[];
+  documents_to_prepare?: string[];
+  recommended_position?: string;
+};
+
+export type DailyBriefingExecutiveResponse = {
+  engine?: string;
+  status?: string;
+  greeting?: string;
+  executive_summary?: string;
+  priorities?: string[];
+  pending_approvals?: unknown[];
+  active_missions?: unknown[];
+  strategic_objectives?: unknown[];
+  risks?: string[];
+  recommended_focus?: string;
+};
+
 export async function askAthena(
   question: string
 ): Promise<AthenaResponse> {
@@ -192,6 +244,98 @@ export async function executeSupplierExecutive(
         supplier,
       }),
     });
+  } catch {
+    throw new Error("I cannot reach the Executive Brain right now.");
+  }
+
+  if (!response.ok) {
+    throw new Error("I cannot reach the Executive Brain right now.");
+  }
+
+  return await response.json();
+}
+
+export async function executeContractExecutive(question: string): Promise<ContractExecutiveResponse> {
+  let response: Response;
+
+  try {
+    response = await fetch(`${API_URL}/athena/executive/contract`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        question,
+      }),
+    });
+  } catch {
+    throw new Error("I cannot reach the Executive Brain right now.");
+  }
+
+  if (!response.ok) {
+    throw new Error("I cannot reach the Executive Brain right now.");
+  }
+
+  return await response.json();
+}
+
+export async function executeProcurementExecutive(
+  question: string,
+  supplier = "",
+): Promise<ProcurementExecutiveResponse> {
+  let response: Response;
+
+  try {
+    response = await fetch(`${API_URL}/athena/executive/procurement`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        question,
+        supplier,
+      }),
+    });
+  } catch {
+    throw new Error("I cannot reach the Executive Brain right now.");
+  }
+
+  if (!response.ok) {
+    throw new Error("I cannot reach the Executive Brain right now.");
+  }
+
+  return await response.json();
+}
+
+export async function executeMeetingExecutive(question: string): Promise<MeetingExecutiveResponse> {
+  let response: Response;
+
+  try {
+    response = await fetch(`${API_URL}/athena/executive/meeting-prep`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        meeting: question,
+      }),
+    });
+  } catch {
+    throw new Error("I cannot reach the Executive Brain right now.");
+  }
+
+  if (!response.ok) {
+    throw new Error("I cannot reach the Executive Brain right now.");
+  }
+
+  return await response.json();
+}
+
+export async function executeDailyBriefingExecutive(): Promise<DailyBriefingExecutiveResponse> {
+  let response: Response;
+
+  try {
+    response = await fetch(`${API_URL}/athena/executive/daily-briefing`);
   } catch {
     throw new Error("I cannot reach the Executive Brain right now.");
   }

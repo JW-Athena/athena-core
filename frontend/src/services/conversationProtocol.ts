@@ -1,6 +1,10 @@
 import type {
+  ContractExecutiveResponse,
+  DailyBriefingExecutiveResponse,
   ExecutiveMissionResponse,
   ExecutiveReasoningResponse,
+  MeetingExecutiveResponse,
+  ProcurementExecutiveResponse,
   SupplierExecutiveResponse,
   TenderExecutiveResponse,
 } from "./athenaApi";
@@ -107,6 +111,64 @@ export function createSupplierConversation(result: SupplierExecutiveResponse): C
   });
 }
 
+export function createContractConversation(result: ContractExecutiveResponse): ConversationProtocolResult {
+  const decision = executiveDecisionLine(result.contract_decision, "REVIEW");
+  const reason = normalizeReason(
+    result.key_risks?.[0] || result.missing_information?.[0] || result.executive_reasoning || result.executive_summary || "",
+    "The contract requires further executive review before commitment.",
+  );
+
+  return createConversation({
+    context: "I've completed my contract assessment.",
+    decision: `My recommendation is ${decision}.`,
+    reason,
+    offer: "Would you like me to review the contract reasoning?",
+  });
+}
+
+export function createProcurementConversation(result: ProcurementExecutiveResponse): ConversationProtocolResult {
+  const decision = executiveDecisionLine(result.procurement_decision, "REVIEW");
+  const reason = normalizeReason(
+    result.executive_reasoning || result.recommended_actions?.[0] || result.executive_summary || "",
+    "The procurement evidence requires further review before commitment.",
+  );
+
+  return createConversation({
+    context: "I've completed my procurement assessment.",
+    decision: `My recommendation is ${decision}.`,
+    reason,
+    offer: "Would you like me to review the procurement reasoning?",
+  });
+}
+
+export function createMeetingConversation(result: MeetingExecutiveResponse): ConversationProtocolResult {
+  const reason = normalizeReason(
+    result.risks_to_raise?.[0] || result.key_talking_points?.[0] || result.executive_summary || "",
+    "The meeting should stay focused on decision, owner, and next action.",
+  );
+
+  return createConversation({
+    context: "I've prepared the meeting.",
+    decision: normalizeDecision(result.recommended_position || result.meeting_objective || "", "I recommend entering with a clear decision position."),
+    reason,
+    offer: "Would you like me to walk through the agenda?",
+  });
+}
+
+export function createDailyBriefingConversation(result: DailyBriefingExecutiveResponse): ConversationProtocolResult {
+  const reason = normalizeReason(
+    result.risks?.[0] || result.executive_summary || "",
+    "The current operating picture supports a focused executive day.",
+  );
+
+  return createConversation({
+    context: result.greeting || "Good morning, Wassim.",
+    decision: normalizeDecision(result.recommended_focus || result.priorities?.[0] || "", "I recommend setting one executive priority for today."),
+    reason,
+    offer: "Would you like me to expand the briefing?",
+  });
+}
+
 export function createErrorConversation(message: string): ConversationProtocolResult {
   return createConversation({
     context: contextLines.error,
@@ -193,6 +255,10 @@ function supplierDecisionLine(decision: string | undefined) {
     return "My recommendation is MONITOR.";
   }
   return "My recommendation is REVIEW.";
+}
+
+function executiveDecisionLine(decision: string | undefined, fallback: string) {
+  return String(decision || fallback).toUpperCase();
 }
 
 function normalizeReason(value: string, fallback: string) {

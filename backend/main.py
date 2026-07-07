@@ -44,6 +44,10 @@ from engine_023_routes import router as engine_023_router
 from engine_024_routes import router as engine_024_router
 from engine_025_routes import router as engine_025_router
 from engine_026_routes import router as engine_026_router
+from engine_027_routes import router as engine_027_router
+from engine_028_routes import router as engine_028_router
+from engine_029_routes import router as engine_029_router
+from engine_030_routes import router as engine_030_router
 
 
 app = FastAPI(
@@ -117,6 +121,10 @@ app.include_router(engine_023_router)
 app.include_router(engine_024_router)
 app.include_router(engine_025_router)
 app.include_router(engine_026_router)
+app.include_router(engine_027_router)
+app.include_router(engine_028_router)
+app.include_router(engine_029_router)
+app.include_router(engine_030_router)
 
 
 if __name__ == "__main__":

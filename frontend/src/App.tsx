@@ -6,12 +6,19 @@ import { AthenaEnvironment } from "./components/AthenaEnvironment";
 import { AthenaPresenceEngine } from "./components/AthenaPresenceEngine";
 import { AthenaPresenceState } from "./components/athenaPresenceState";
 import {
+  executeContractExecutive,
+  executeDailyBriefingExecutive,
   executeExecutiveReasoning,
-  executeMission,
+  executeMeetingExecutive,
+  executeProcurementExecutive,
   executeSupplierExecutive,
   executeTenderExecutive,
+  type ContractExecutiveResponse,
+  type DailyBriefingExecutiveResponse,
   type ExecutiveMissionResponse,
   type ExecutiveReasoningResponse,
+  type MeetingExecutiveResponse,
+  type ProcurementExecutiveResponse,
   type SupplierExecutiveResponse,
   type TenderExecutiveResponse,
 } from "./services/athenaApi";
@@ -23,7 +30,11 @@ import {
 } from "./services/workspaceMemory";
 import {
   createErrorConversation,
+  createContractConversation,
+  createDailyBriefingConversation,
+  createMeetingConversation,
   createMissionConversation,
+  createProcurementConversation,
   createReasoningConversation,
   createSupplierConversation,
   createTenderConversation,
@@ -65,7 +76,7 @@ const missionSteps = [
   "Checking approvals",
 ];
 
-type ExecutionMode = "mission" | "reasoning" | "tender" | "supplier" | null;
+type ExecutionMode = "mission" | "reasoning" | "tender" | "supplier" | "contract" | "procurement" | "meeting" | "briefing" | null;
 
 type MissionIntent = {
   hint: string;
@@ -116,6 +127,10 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
   const [reasoningResult, setReasoningResult] = useState<ExecutiveReasoningResponse | null>(null);
   const [tenderResult, setTenderResult] = useState<TenderExecutiveResponse | null>(null);
   const [supplierResult, setSupplierResult] = useState<SupplierExecutiveResponse | null>(null);
+  const [contractResult, setContractResult] = useState<ContractExecutiveResponse | null>(null);
+  const [procurementResult, setProcurementResult] = useState<ProcurementExecutiveResponse | null>(null);
+  const [meetingResult, setMeetingResult] = useState<MeetingExecutiveResponse | null>(null);
+  const [briefingResult, setBriefingResult] = useState<DailyBriefingExecutiveResponse | null>(null);
   const [missionError, setMissionError] = useState("");
   const [protocolLines, setProtocolLines] = useState<ConversationProtocolLine[]>(() => buildMemorySpeech(workspaceMemory));
   const [visibleProtocolLines, setVisibleProtocolLines] = useState<ConversationProtocolLine[]>(() =>
@@ -159,12 +174,20 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
   }, [isExecuting, visibleSteps.length]);
 
   useEffect(() => {
-    if (!missionResult && !reasoningResult && !tenderResult && !supplierResult && !missionError) {
+    if (!missionResult && !reasoningResult && !tenderResult && !supplierResult && !contractResult && !procurementResult && !meetingResult && !briefingResult && !missionError) {
       return;
     }
 
     const conversation = missionError
       ? createErrorConversation(missionError)
+      : briefingResult
+        ? createDailyBriefingConversation(briefingResult)
+      : meetingResult
+        ? createMeetingConversation(meetingResult)
+      : procurementResult
+        ? createProcurementConversation(procurementResult)
+      : contractResult
+        ? createContractConversation(contractResult)
       : supplierResult
         ? createSupplierConversation(supplierResult)
       : tenderResult
@@ -191,7 +214,7 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
                 lastPresenceState: AthenaPresenceState.ERROR,
               }),
             );
-          } else if (reasoningResult || tenderResult || supplierResult) {
+          } else if (reasoningResult || tenderResult || supplierResult || contractResult || procurementResult || meetingResult || briefingResult) {
             setPresenceState(AthenaPresenceState.SUCCESS);
             setWorkspaceMemory(
               updateWorkspaceMemory({
@@ -232,7 +255,11 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
     isSpeaking,
     missionError,
     missionResult,
+    briefingResult,
+    contractResult,
+    meetingResult,
     protocolLines,
+    procurementResult,
     reasoningResult,
     supplierResult,
     tenderResult,
@@ -269,6 +296,10 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
     setReasoningResult(null);
     setTenderResult(null);
     setSupplierResult(null);
+    setContractResult(null);
+    setProcurementResult(null);
+    setMeetingResult(null);
+    setBriefingResult(null);
     setMissionError("");
     setProtocolLines([]);
     setVisibleProtocolLines([]);
@@ -285,17 +316,59 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
     setIsExecuting(true);
 
     try {
-      if (looksLikeSupplierContinueQuestion(nextMission)) {
-        const supplierName = extractSupplierName(nextMission);
-        setExecutionMode("supplier");
+      if (looksLikeContractQuestion(nextMission)) {
+        setExecutionMode("contract");
         setVisibleSteps([]);
-        const result = await executeSupplierExecutive(nextMission, supplierName);
-        setSupplierResult(result);
+        const result = await executeContractExecutive(nextMission);
+        setContractResult(result);
         setWorkspaceMemory(
           updateWorkspaceMemory({
             lastMission: nextMission,
-            lastRecommendation: result.supplier_decision ? `Supplier recommendation: ${result.supplier_decision}` : "",
-            lastApproval: result.key_concerns?.[0] || "",
+            lastRecommendation: result.contract_decision ? `Contract recommendation: ${result.contract_decision}` : "",
+            lastApproval: result.key_risks?.[0] || result.missing_information?.[0] || "",
+            lastGreeting: currentProtocolGreeting(),
+            lastPresenceState: AthenaPresenceState.SPEAKING,
+          }),
+        );
+      } else if (looksLikeProcurementQuestion(nextMission)) {
+        setExecutionMode("procurement");
+        setVisibleSteps([]);
+        const supplierName = extractSupplierName(nextMission);
+        const result = await executeProcurementExecutive(nextMission, supplierName);
+        setProcurementResult(result);
+        setWorkspaceMemory(
+          updateWorkspaceMemory({
+            lastMission: nextMission,
+            lastRecommendation: result.procurement_decision ? `Procurement recommendation: ${result.procurement_decision}` : "",
+            lastApproval: result.recommended_actions?.[0] || "",
+            lastGreeting: currentProtocolGreeting(),
+            lastPresenceState: AthenaPresenceState.SPEAKING,
+          }),
+        );
+      } else if (looksLikeMeetingQuestion(nextMission)) {
+        setExecutionMode("meeting");
+        setVisibleSteps([]);
+        const result = await executeMeetingExecutive(nextMission);
+        setMeetingResult(result);
+        setWorkspaceMemory(
+          updateWorkspaceMemory({
+            lastMission: nextMission,
+            lastRecommendation: result.recommended_position || result.meeting_objective || "",
+            lastApproval: result.risks_to_raise?.[0] || "",
+            lastGreeting: currentProtocolGreeting(),
+            lastPresenceState: AthenaPresenceState.SPEAKING,
+          }),
+        );
+      } else if (looksLikeDailyBriefingQuestion(nextMission)) {
+        setExecutionMode("briefing");
+        setVisibleSteps([]);
+        const result = await executeDailyBriefingExecutive();
+        setBriefingResult(result);
+        setWorkspaceMemory(
+          updateWorkspaceMemory({
+            lastMission: nextMission,
+            lastRecommendation: result.recommended_focus || result.priorities?.[0] || "",
+            lastApproval: result.risks?.[0] || "",
             lastGreeting: currentProtocolGreeting(),
             lastPresenceState: AthenaPresenceState.SPEAKING,
           }),
@@ -310,6 +383,21 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
             lastMission: nextMission,
             lastRecommendation: result.bid_decision ? `Tender recommendation: ${result.bid_decision}` : "",
             lastApproval: result.key_blockers?.[0] || "",
+            lastGreeting: currentProtocolGreeting(),
+            lastPresenceState: AthenaPresenceState.SPEAKING,
+          }),
+        );
+      } else if (looksLikeSupplierQuestion(nextMission)) {
+        const supplierName = extractSupplierName(nextMission);
+        setExecutionMode("supplier");
+        setVisibleSteps([]);
+        const result = await executeSupplierExecutive(nextMission, supplierName);
+        setSupplierResult(result);
+        setWorkspaceMemory(
+          updateWorkspaceMemory({
+            lastMission: nextMission,
+            lastRecommendation: result.supplier_decision ? `Supplier recommendation: ${result.supplier_decision}` : "",
+            lastApproval: result.key_concerns?.[0] || "",
             lastGreeting: currentProtocolGreeting(),
             lastPresenceState: AthenaPresenceState.SPEAKING,
           }),
@@ -329,23 +417,15 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
           }),
         );
       } else {
-        setExecutionMode("mission");
-        const result = await executeMission(nextMission);
-        const nextRecommendation =
-          result.executive_response?.recommended_next_action ||
-          result.executive_response?.summary ||
-          "ATHENA completed the mission and prepared an executive recommendation.";
-        const nextApproval =
-          result.approval_request?.reason ||
-          result.approval_request?.required_action ||
-          (result.executive_response?.requires_approval ? "Executive approval is required." : "");
-
-        setMissionResult(result);
+        setExecutionMode("reasoning");
+        setVisibleSteps([]);
+        const result = await executeExecutiveReasoning(nextMission);
+        setReasoningResult(result);
         setWorkspaceMemory(
           updateWorkspaceMemory({
             lastMission: nextMission,
-            lastRecommendation: nextRecommendation,
-            lastApproval: nextApproval,
+            lastRecommendation: result.executive_recommendation || result.recommended_next_action || "",
+            lastApproval: result.requires_executive_attention ? "This requires executive attention." : "",
             lastGreeting: currentProtocolGreeting(),
             lastPresenceState: AthenaPresenceState.SPEAKING,
           }),
@@ -355,7 +435,7 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
       setIsSpeaking(true);
     } catch (error) {
       const errorMessage =
-        looksLikeExecutiveQuestion(nextMission) || looksLikeTenderBidQuestion(nextMission) || looksLikeSupplierContinueQuestion(nextMission)
+        looksLikeExecutiveSkillQuestion(nextMission)
         ? "I cannot reach the Executive Brain right now."
         : error instanceof Error
           ? error.message
@@ -371,13 +451,13 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
         }),
       );
       setPresenceState(
-        looksLikeExecutiveQuestion(nextMission) || looksLikeTenderBidQuestion(nextMission) || looksLikeSupplierContinueQuestion(nextMission)
+        looksLikeExecutiveSkillQuestion(nextMission)
           ? AthenaPresenceState.ERROR
           : AthenaPresenceState.SPEAKING,
       );
       setIsSpeaking(true);
     } finally {
-      if (looksLikeExecutiveQuestion(nextMission) || looksLikeTenderBidQuestion(nextMission) || looksLikeSupplierContinueQuestion(nextMission)) {
+      if (looksLikeExecutiveSkillQuestion(nextMission)) {
         setVisibleSteps([]);
       } else {
         setVisibleSteps(missionSteps);
@@ -394,6 +474,10 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
     setReasoningResult(null);
     setTenderResult(null);
     setSupplierResult(null);
+    setContractResult(null);
+    setProcurementResult(null);
+    setMeetingResult(null);
+    setBriefingResult(null);
     setMissionError("");
     setProtocolLines([]);
     setVisibleProtocolLines([]);
@@ -428,6 +512,10 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
     setReasoningResult(null);
     setTenderResult(null);
     setSupplierResult(null);
+    setContractResult(null);
+    setProcurementResult(null);
+    setMeetingResult(null);
+    setBriefingResult(null);
     setMissionError("");
     setProtocolLines([]);
     setVisibleProtocolLines([]);
@@ -515,7 +603,7 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
             {!isSpeaking && showProtocolOffer && visibleProtocolLines.length > 0 && (
               <div className="conversation-actions">
                 <button type="button" onClick={() => setBriefOpen(true)}>
-                  {tenderResult ? "View Executive Brief" : supplierResult ? "View Supplier Evidence" : "YES"}
+                {tenderResult ? "View Executive Brief" : supplierResult ? "View Supplier Evidence" : "YES"}
                 </button>
                 {!tenderResult && !supplierResult && (
                   <button type="button" onClick={returnToListening}>
@@ -528,7 +616,7 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
         )}
 
         <section
-          className={isExecuting && executionMode !== "reasoning" ? "command-timeline visible" : "command-timeline"}
+          className={isExecuting && executionMode === "mission" ? "command-timeline visible" : "command-timeline"}
           aria-live="polite"
         >
             <div className="command-timeline-header">
@@ -1016,10 +1104,31 @@ function detectMissionIntent(mission: string): MissionIntent {
     };
   }
 
-  if (normalizedMission.includes("contract")) {
+  if (looksLikeContractQuestion(mission)) {
     return {
       hint: "Contract Intelligence",
       greeting: "I can assist with contract intelligence.",
+    };
+  }
+
+  if (looksLikeProcurementQuestion(mission)) {
+    return {
+      hint: "Procurement Review",
+      greeting: "I can assist with procurement review.",
+    };
+  }
+
+  if (looksLikeMeetingQuestion(mission)) {
+    return {
+      hint: "Meeting Preparation",
+      greeting: "I can prepare the meeting position.",
+    };
+  }
+
+  if (looksLikeDailyBriefingQuestion(mission)) {
+    return {
+      hint: "Daily Briefing",
+      greeting: "I can prepare today's executive briefing.",
     };
   }
 
@@ -1040,9 +1149,29 @@ function looksLikeExecutiveQuestion(input: string) {
   return /^(should|what|why|how|can|is|are)\b/i.test(input.trim());
 }
 
+function looksLikeContractQuestion(input: string) {
+  const normalized = input.trim().toLowerCase();
+  return /\b(contract|agreement|terms)\b/.test(normalized);
+}
+
+function looksLikeProcurementQuestion(input: string) {
+  const normalized = input.trim().toLowerCase();
+  return /\b(procure|procurement|purchase|buy|source)\b/.test(normalized);
+}
+
+function looksLikeMeetingQuestion(input: string) {
+  const normalized = input.trim().toLowerCase();
+  return /\b(meeting|agenda)\b/.test(normalized) || /\bprepare me\b/.test(normalized);
+}
+
+function looksLikeDailyBriefingQuestion(input: string) {
+  const normalized = input.trim().toLowerCase();
+  return /\b(briefing|morning|today|focus)\b/.test(normalized);
+}
+
 function looksLikeTenderBidQuestion(input: string) {
   const normalized = input.trim().toLowerCase();
-  return /^(should)\b/.test(normalized) && /\b(icc|we)\b/.test(normalized) && /\bbid\b/.test(normalized);
+  return /\b(bid|tender)\b/.test(normalized);
 }
 
 function looksLikeSupplierContinueQuestion(input: string) {
@@ -1052,6 +1181,23 @@ function looksLikeSupplierContinueQuestion(input: string) {
     /\b(we|icc)\b/.test(normalized) &&
     /\bcontinue\b/.test(normalized) &&
     /\b(supplier|working with|with)\b/.test(normalized)
+  );
+}
+
+function looksLikeSupplierQuestion(input: string) {
+  return /\bsupplier\b/i.test(input) || looksLikeSupplierContinueQuestion(input);
+}
+
+function looksLikeExecutiveSkillQuestion(input: string) {
+  return (
+    looksLikeContractQuestion(input) ||
+    looksLikeProcurementQuestion(input) ||
+    looksLikeMeetingQuestion(input) ||
+    looksLikeDailyBriefingQuestion(input) ||
+    looksLikeTenderBidQuestion(input) ||
+    looksLikeSupplierQuestion(input) ||
+    looksLikeExecutiveQuestion(input) ||
+    input.trim().length > 0
   );
 }
 
