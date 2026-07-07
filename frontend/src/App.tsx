@@ -822,6 +822,42 @@ function ExecutiveWorkspacePanel({
         </dl>
       </div>
 
+      {briefing.details.length > 0 && (
+        <div className="executive-workspace-section details">
+          <span>Mission Detail</span>
+          <dl>
+            {briefing.details.map((detail) => (
+              <div key={detail.label}>
+                <dt>{detail.label}</dt>
+                <dd>{detail.value}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      )}
+
+      {briefing.risks.length > 0 && (
+        <div className="executive-workspace-section compact-list">
+          <span>Risks</span>
+          <ul>
+            {briefing.risks.map((risk) => (
+              <li key={risk}>{risk}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {briefing.missingInformation.length > 0 && (
+        <div className="executive-workspace-section compact-list">
+          <span>Missing Information</span>
+          <ul>
+            {briefing.missingInformation.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       <div className="executive-workspace-section timeline">
         <span>Mission Timeline</span>
         <ol>
@@ -868,7 +904,7 @@ function buildExecutiveWorkspaceBrief({
       meetingResult,
       briefingResult,
     }),
-    status: "Assessment Complete",
+    status: executiveWorkspaceStatus({ missionResult }),
     assessment: executiveWorkspaceAssessment({
       missionResult,
       reasoningResult,
@@ -888,6 +924,28 @@ function buildExecutiveWorkspaceBrief({
       procurementResult,
       meetingResult,
       briefingResult,
+    }),
+    details: executiveWorkspaceDetails({
+      missionResult,
+      reasoningResult,
+      tenderResult,
+      supplierResult,
+      contractResult,
+      procurementResult,
+      meetingResult,
+      briefingResult,
+    }),
+    risks: executiveWorkspaceRisks({
+      reasoningResult,
+      tenderResult,
+      supplierResult,
+      contractResult,
+      procurementResult,
+      meetingResult,
+      briefingResult,
+    }),
+    missingInformation: executiveWorkspaceMissingInformation({
+      contractResult,
     }),
   };
 }
@@ -1270,7 +1328,7 @@ function completedObjectiveMemory(objective: string): Partial<WorkspaceMemory> {
   };
 }
 
-function cleanObjectiveText(value: string) {
+function cleanObjectiveText(value: unknown) {
   return String(value || "").replace(/\s+/g, " ").trim();
 }
 
@@ -1454,7 +1512,214 @@ function executiveWorkspaceRecommendation({
   );
 }
 
-function firstExecutiveSentence(value: string) {
+function executiveWorkspaceDetails({
+  missionResult,
+  reasoningResult,
+  tenderResult,
+  supplierResult,
+  contractResult,
+  procurementResult,
+  meetingResult,
+  briefingResult,
+}: {
+  missionResult: ExecutiveMissionResponse | null;
+  reasoningResult: ExecutiveReasoningResponse | null;
+  tenderResult: TenderExecutiveResponse | null;
+  supplierResult: SupplierExecutiveResponse | null;
+  contractResult: ContractExecutiveResponse | null;
+  procurementResult: ProcurementExecutiveResponse | null;
+  meetingResult: MeetingExecutiveResponse | null;
+  briefingResult: DailyBriefingExecutiveResponse | null;
+}) {
+  const details: Array<{ label: string; value: string }> = [];
+  const priority = executiveWorkspacePriority({
+    missionResult,
+    reasoningResult,
+    tenderResult,
+    supplierResult,
+    contractResult,
+    procurementResult,
+  });
+  const readiness = executiveWorkspaceReadiness({
+    missionResult,
+    reasoningResult,
+    tenderResult,
+    supplierResult,
+    contractResult,
+    procurementResult,
+  });
+  const requiredNextAction = firstExecutiveSentence(
+    missionResult?.approval_request?.required_action ||
+    meetingResult?.questions_to_ask?.[0] ||
+    meetingResult?.documents_to_prepare?.[0] ||
+    briefingResult?.priorities?.[0] ||
+    "",
+  );
+
+  if (priority) {
+    details.push({ label: "Priority", value: priority });
+  }
+  if (requiredNextAction) {
+    details.push({ label: "Required Next Action", value: requiredNextAction });
+  }
+  if (readiness) {
+    details.push({ label: "Readiness", value: readiness });
+  }
+
+  return details;
+}
+
+function executiveWorkspacePriority({
+  missionResult,
+  reasoningResult,
+  tenderResult,
+  supplierResult,
+  contractResult,
+  procurementResult,
+}: {
+  missionResult: ExecutiveMissionResponse | null;
+  reasoningResult: ExecutiveReasoningResponse | null;
+  tenderResult: TenderExecutiveResponse | null;
+  supplierResult: SupplierExecutiveResponse | null;
+  contractResult: ContractExecutiveResponse | null;
+  procurementResult: ProcurementExecutiveResponse | null;
+}) {
+  if (missionResult?.mission_evaluation?.approval_required || missionResult?.approval_request) {
+    return "Approval Required";
+  }
+  if (reasoningResult?.requires_executive_attention) {
+    return "Executive Attention";
+  }
+  if (contractResult?.risk_level && ["High", "Critical"].includes(contractResult.risk_level)) {
+    return `${contractResult.risk_level} Risk`;
+  }
+  if (supplierResult?.risk_level && ["High", "Critical"].includes(supplierResult.risk_level)) {
+    return `${supplierResult.risk_level} Supplier Risk`;
+  }
+  if (procurementResult?.procurement_decision && ["Hold", "Reject", "Review"].includes(procurementResult.procurement_decision)) {
+    return `${procurementResult.procurement_decision} Required`;
+  }
+  if (tenderResult?.bid_decision === "Review") {
+    return "Executive Review";
+  }
+  return "";
+}
+
+function executiveWorkspaceReadiness({
+  missionResult,
+  reasoningResult,
+  tenderResult,
+  supplierResult,
+  contractResult,
+  procurementResult,
+}: {
+  missionResult: ExecutiveMissionResponse | null;
+  reasoningResult: ExecutiveReasoningResponse | null;
+  tenderResult: TenderExecutiveResponse | null;
+  supplierResult: SupplierExecutiveResponse | null;
+  contractResult: ContractExecutiveResponse | null;
+  procurementResult: ProcurementExecutiveResponse | null;
+}) {
+  if (missionResult?.mission_evaluation?.decision_ready !== undefined) {
+    return missionResult.mission_evaluation.decision_ready ? "Decision Ready" : "Decision Not Ready";
+  }
+
+  const confidence =
+    contractResult?.confidence ??
+    procurementResult?.confidence ??
+    supplierResult?.confidence ??
+    tenderResult?.confidence ??
+    reasoningResult?.confidence ??
+    missionResult?.mission_evaluation?.confidence;
+
+  return confidence !== undefined ? `Confidence ${confidence}%` : "";
+}
+
+function executiveWorkspaceRisks({
+  reasoningResult,
+  tenderResult,
+  supplierResult,
+  contractResult,
+  procurementResult,
+  meetingResult,
+  briefingResult,
+}: {
+  reasoningResult: ExecutiveReasoningResponse | null;
+  tenderResult: TenderExecutiveResponse | null;
+  supplierResult: SupplierExecutiveResponse | null;
+  contractResult: ContractExecutiveResponse | null;
+  procurementResult: ProcurementExecutiveResponse | null;
+  meetingResult: MeetingExecutiveResponse | null;
+  briefingResult: DailyBriefingExecutiveResponse | null;
+}) {
+  return uniqueExecutiveItems(
+    contractResult?.key_risks,
+    supplierResult?.key_concerns,
+    tenderResult?.key_blockers,
+    meetingResult?.risks_to_raise,
+    briefingResult?.risks,
+    riskLabelsFromProcurement(procurementResult),
+    riskFindingsFromReasoning(reasoningResult),
+  ).slice(0, 4);
+}
+
+function executiveWorkspaceMissingInformation({
+  contractResult,
+}: {
+  contractResult: ContractExecutiveResponse | null;
+}) {
+  return uniqueExecutiveItems(
+    contractResult?.missing_information,
+  ).slice(0, 4);
+}
+
+function executiveWorkspaceStatus({ missionResult }: { missionResult: ExecutiveMissionResponse | null }) {
+  if (missionResult?.mission_status === "pending_approval") {
+    return "Pending Approval";
+  }
+
+  if (missionResult?.mission_status) {
+    return titleCaseStatus(missionResult.mission_status);
+  }
+
+  return "Assessment Complete";
+}
+
+function riskLabelsFromProcurement(result: ProcurementExecutiveResponse | null) {
+  if (!result) {
+    return [];
+  }
+
+  return [result.supplier_risk, result.commercial_risk]
+    .filter((value) => value && value !== "Low" && value !== "Unknown")
+    .map((value) => `${value} procurement exposure.`) as string[];
+}
+
+function riskFindingsFromReasoning(result: ExecutiveReasoningResponse | null) {
+  return (result?.key_findings || []).filter((finding) =>
+    /\b(risk|limited|pending|no |missing|attention)\b/i.test(finding),
+  );
+}
+
+function uniqueExecutiveItems(...groups: Array<string[] | undefined>) {
+  const values: string[] = [];
+  const seen = new Set<string>();
+
+  for (const group of groups) {
+    for (const item of group || []) {
+      const cleanItem = firstExecutiveSentence(item);
+      const key = cleanItem.toLowerCase();
+      if (cleanItem && !seen.has(key)) {
+        values.push(cleanItem);
+        seen.add(key);
+      }
+    }
+  }
+
+  return values;
+}
+
+function firstExecutiveSentence(value: unknown) {
   const cleanValue = cleanObjectiveText(value);
   if (!cleanValue) {
     return "";
@@ -1462,6 +1727,14 @@ function firstExecutiveSentence(value: string) {
 
   const match = cleanValue.match(/.*?[.!?](\s|$)/);
   return (match ? match[0] : cleanValue).trim();
+}
+
+function titleCaseStatus(value: string) {
+  return String(value || "")
+    .split(/[_\s-]+/)
+    .filter(Boolean)
+    .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1).toLowerCase()}`)
+    .join(" ");
 }
 
 function detectMissionIntent(mission: string): MissionIntent {

@@ -1841,6 +1841,25 @@ button {
   box-shadow: 0 0 18px rgba(214, 179, 106, 0.18);
 }
 
+.executive-workspace-section.details dl {
+  gap: 26px 42px;
+}
+
+.executive-workspace-section.compact-list ul {
+  display: grid;
+  gap: 9px;
+  max-width: 720px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.executive-workspace-section.compact-list li {
+  color: rgba(232, 220, 196, 0.68);
+  font-size: 14px;
+  line-height: 1.56;
+}
+
 @keyframes protocol-offer-arrive {
   from {
     opacity: 0;
