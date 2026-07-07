@@ -9,6 +9,8 @@ import {
   executeContractExecutive,
   executeDailyBriefingExecutive,
   executeExecutiveReasoning,
+  fetchAthenaEvents,
+  type AthenaEvent,
   executeMeetingExecutive,
   executeProcurementExecutive,
   executeSupplierExecutive,
@@ -152,6 +154,8 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
   );
   const [visibleSteps, setVisibleSteps] = useState<string[]>([]);
   const [orchestrationSteps, setOrchestrationSteps] = useState<string[]>(defaultOrchestrationSteps);
+  const [missionStartedAt, setMissionStartedAt] = useState("");
+  const [eventTimelineActive, setEventTimelineActive] = useState(false);
   const missionIntent = detectMissionIntent(mission);
   const hasDraftMission = mission.trim().length > 0;
   const greetingMessage = missionIntent.hint ? missionIntent.greeting : missionIntent.greeting;
@@ -199,7 +203,7 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
   }, [arrivalExecutiveLine, arrivalRestState, setPresenceState]);
 
   useEffect(() => {
-    if (!isExecuting) {
+    if (!isExecuting || eventTimelineActive) {
       return;
     }
 
@@ -212,7 +216,44 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
     }, visibleSteps.length === 0 ? 220 : 760);
 
     return () => window.clearTimeout(timer);
-  }, [isExecuting, orchestrationSteps, visibleSteps.length]);
+  }, [eventTimelineActive, isExecuting, orchestrationSteps, visibleSteps.length]);
+
+  useEffect(() => {
+    if (!isExecuting || !missionStartedAt) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const readEvents = async () => {
+      try {
+        const result = await fetchAthenaEvents(60);
+        if (cancelled) {
+          return;
+        }
+
+        const lines = executiveEventLines(result.events || [], missionStartedAt);
+        if (lines.length > 0) {
+          setEventTimelineActive(true);
+          setVisibleSteps(lines);
+        }
+      } catch {
+        if (!cancelled) {
+          setEventTimelineActive(false);
+        }
+      }
+    };
+
+    void readEvents();
+    const timer = window.setInterval(() => {
+      void readEvents();
+    }, 700);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [isExecuting, missionStartedAt]);
 
   useEffect(() => {
     if (isExecuting) {
@@ -343,7 +384,10 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
       return;
     }
 
+    const executionStartedAt = new Date().toISOString();
     setSubmittedMission(nextMission);
+    setMissionStartedAt(executionStartedAt);
+    setEventTimelineActive(false);
     setOrchestrationSteps(buildOrchestrationSteps(nextMission));
     setVisibleSteps([]);
     setMissionResult(null);
@@ -527,6 +571,16 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
       );
       setIsSpeaking(true);
     } finally {
+      try {
+        const result = await fetchAthenaEvents(60);
+        const lines = executiveEventLines(result.events || [], executionStartedAt);
+        if (lines.length > 0) {
+          setEventTimelineActive(true);
+          setVisibleSteps(lines);
+        }
+      } catch {
+        // Keep the current fallback or previously received event timeline.
+      }
       setIsExecuting(false);
     }
   };
@@ -535,6 +589,8 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
     setMission("");
     setSubmittedMission("");
     setVisibleSteps([]);
+    setMissionStartedAt("");
+    setEventTimelineActive(false);
     setOrchestrationSteps(defaultOrchestrationSteps);
     setMissionResult(null);
     setReasoningResult(null);
@@ -588,6 +644,8 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
     setVisibleProtocolLines([]);
     setShowProtocolOffer(false);
     setVisibleSteps([]);
+    setMissionStartedAt("");
+    setEventTimelineActive(false);
     setOrchestrationSteps(defaultOrchestrationSteps);
     setBriefOpen(false);
     setExecutionMode(null);
@@ -689,6 +747,7 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
         <ExecutiveWorkspacePanel
           visible={showExecutiveWorkspace}
           mission={submittedMission}
+          timelineSteps={eventTimelineActive ? visibleSteps : []}
           missionResult={missionResult}
           reasoningResult={reasoningResult}
           tenderResult={tenderResult}
@@ -759,6 +818,7 @@ function ChamberOverlay({ route, activePath }: { route: WorkspaceRoute; activePa
 function ExecutiveWorkspacePanel({
   visible,
   mission,
+  timelineSteps,
   missionResult,
   reasoningResult,
   tenderResult,
@@ -770,6 +830,7 @@ function ExecutiveWorkspacePanel({
 }: {
   visible: boolean;
   mission: string;
+  timelineSteps: string[];
   missionResult: ExecutiveMissionResponse | null;
   reasoningResult: ExecutiveReasoningResponse | null;
   tenderResult: TenderExecutiveResponse | null;
@@ -861,9 +922,9 @@ function ExecutiveWorkspacePanel({
       <div className="executive-workspace-section timeline">
         <span>Mission Timeline</span>
         <ol>
-          <li>Mission Initiated</li>
-          <li>Executive Assessment</li>
-          <li>Recommendation Delivered</li>
+          {(timelineSteps.length > 0 ? timelineSteps : ["Mission Initiated", "Executive Assessment", "Recommendation Delivered"]).map((step) => (
+            <li key={step}>{completedTimelineLabel(step)}</li>
+          ))}
         </ol>
       </div>
     </section>
@@ -1375,6 +1436,67 @@ function buildOrchestrationSteps(objective: string) {
     defaultOrchestrationSteps[5],
     defaultOrchestrationSteps[6],
   ];
+}
+
+function executiveEventLines(events: AthenaEvent[], startedAt: string) {
+  const started = Date.parse(startedAt);
+  const lines: string[] = [];
+  const seen = new Set<string>();
+
+  for (const event of events) {
+    const eventTime = Date.parse(String(event.timestamp || ""));
+    if (!Number.isNaN(started) && !Number.isNaN(eventTime) && eventTime < started - 750) {
+      continue;
+    }
+
+    const line = executiveEventLine(event);
+    if (line && !seen.has(line)) {
+      seen.add(line);
+      lines.push(line);
+    }
+  }
+
+  return lines.slice(0, 7);
+}
+
+function executiveEventLine(event: AthenaEvent) {
+  const eventType = String(event.event_type || "");
+  const payload = event.payload || {};
+  const result = String(payload.result || "");
+
+  if (result === "failed" || eventType.includes("Failed")) {
+    return "Executive assessment requires attention...";
+  }
+
+  const eventLines: Record<string, string> = {
+    ContractExecutiveStarted: "Contract Executive engaged...",
+    ContractExecutiveCompleted: "Contract recommendation delivered...",
+    ProcurementExecutiveStarted: "Procurement Executive engaged...",
+    ProcurementExecutiveCompleted: "Procurement recommendation delivered...",
+    MeetingExecutiveStarted: "Meeting Executive engaged...",
+    MeetingExecutiveCompleted: "Meeting preparation completed...",
+    DailyBriefingGenerated: "Executive briefing generated...",
+    TenderExecutiveStarted: "Tender Executive engaged...",
+    TenderExecutiveCompleted: "Tender recommendation delivered...",
+    SupplierExecutiveStarted: "Supplier Executive engaged...",
+    SupplierExecutiveCompleted: "Supplier recommendation delivered...",
+    ExecutiveReasoningStarted: "Executive reasoning engaged...",
+    ExecutiveReasoningCompleted: "Executive recommendation delivered...",
+    OrganizationImpactAnalyzed: "Strategic impact evaluated...",
+    OperationsOverviewRequested: "Operations context consulted...",
+    ReasoningChainGenerated: "Business dependencies reviewed...",
+    MissionExecutionStarted: "Mission execution initiated...",
+    MissionExecutionCompleted: "Mission execution completed...",
+    MissionApprovalRequired: "Executive approval requirement identified...",
+    MissionApproved: "Executive approval recorded...",
+    MissionRejected: "Executive decision recorded...",
+  };
+
+  return eventLines[eventType] || "";
+}
+
+function completedTimelineLabel(step: string) {
+  return String(step || "").replace(/\.\.\.$/, "").replace(/\.$/, "");
 }
 
 function conciseMissionTitle(mission: string) {

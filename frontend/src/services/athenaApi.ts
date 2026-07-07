@@ -130,6 +130,20 @@ export type DailyBriefingExecutiveResponse = {
   recommended_focus?: string;
 };
 
+export type AthenaEvent = {
+  id?: string;
+  event_type?: string;
+  timestamp?: string;
+  source?: string;
+  payload?: Record<string, unknown>;
+};
+
+export type AthenaEventsResponse = {
+  engine?: string;
+  status?: string;
+  events?: AthenaEvent[];
+};
+
 export async function askAthena(
   question: string
 ): Promise<AthenaResponse> {
@@ -342,6 +356,22 @@ export async function executeDailyBriefingExecutive(): Promise<DailyBriefingExec
 
   if (!response.ok) {
     throw new Error("I cannot reach the Executive Brain right now.");
+  }
+
+  return await response.json();
+}
+
+export async function fetchAthenaEvents(limit = 50): Promise<AthenaEventsResponse> {
+  let response: Response;
+
+  try {
+    response = await fetch(`${API_URL}/athena/events?limit=${limit}`);
+  } catch {
+    throw new Error("ATHENA events are not reachable.");
+  }
+
+  if (!response.ok) {
+    throw new Error("ATHENA events are not reachable.");
   }
 
   return await response.json();
