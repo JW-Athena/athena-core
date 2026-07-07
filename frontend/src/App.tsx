@@ -67,14 +67,14 @@ const routes: WorkspaceRoute[] = [
   { path: "/settings", label: "Settings", title: "Settings", eyebrow: "System Controls" },
 ];
 
-const executiveThinkingSteps = [
-  "Executive Brain engaged...",
-  "Understanding objective...",
-  "Selecting executive capabilities...",
-  "Consulting organizational knowledge...",
-  "Evaluating strategic impact...",
-  "Preparing executive recommendation...",
-  "Finalizing executive recommendation...",
+const defaultOrchestrationSteps = [
+  "Executive objective received...",
+  "Mission scope is being defined...",
+  "Relevant executive capabilities are being aligned...",
+  "Organizational knowledge is being consulted...",
+  "Strategic impact is being evaluated...",
+  "Executive recommendation is being prepared...",
+  "Final briefing is being assembled...",
 ];
 
 type ExecutionMode = "mission" | "reasoning" | "tender" | "supplier" | "contract" | "procurement" | "meeting" | "briefing" | null;
@@ -151,6 +151,7 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
     workspaceMemory ? AthenaPresenceState.WAITING : AthenaPresenceState.BOOTING,
   );
   const [visibleSteps, setVisibleSteps] = useState<string[]>([]);
+  const [orchestrationSteps, setOrchestrationSteps] = useState<string[]>(defaultOrchestrationSteps);
   const missionIntent = detectMissionIntent(mission);
   const hasDraftMission = mission.trim().length > 0;
   const greetingMessage = missionIntent.hint ? missionIntent.greeting : missionIntent.greeting;
@@ -191,16 +192,16 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
       return;
     }
 
-    if (visibleSteps.length >= executiveThinkingSteps.length) {
+    if (visibleSteps.length >= orchestrationSteps.length) {
       return;
     }
 
     const timer = window.setTimeout(() => {
-      setVisibleSteps((steps) => [...steps, executiveThinkingSteps[steps.length]]);
+      setVisibleSteps((steps) => [...steps, orchestrationSteps[steps.length]]);
     }, visibleSteps.length === 0 ? 220 : 760);
 
     return () => window.clearTimeout(timer);
-  }, [isExecuting, visibleSteps.length]);
+  }, [isExecuting, orchestrationSteps, visibleSteps.length]);
 
   useEffect(() => {
     if (isExecuting) {
@@ -332,6 +333,7 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
     }
 
     setSubmittedMission(nextMission);
+    setOrchestrationSteps(buildOrchestrationSteps(nextMission));
     setVisibleSteps([]);
     setMissionResult(null);
     setReasoningResult(null);
@@ -492,7 +494,7 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
         ? "I cannot reach the Executive Brain right now."
         : error instanceof Error
           ? error.message
-          : "ATHENA backend is not reachable.";
+          : "ATHENA cannot complete the assessment right now.";
       setMissionError(errorMessage);
       setWorkspaceMemory(
         updateWorkspaceMemory({
@@ -522,6 +524,7 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
     setMission("");
     setSubmittedMission("");
     setVisibleSteps([]);
+    setOrchestrationSteps(defaultOrchestrationSteps);
     setMissionResult(null);
     setReasoningResult(null);
     setTenderResult(null);
@@ -574,6 +577,7 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
     setVisibleProtocolLines([]);
     setShowProtocolOffer(false);
     setVisibleSteps([]);
+    setOrchestrationSteps(defaultOrchestrationSteps);
     setBriefOpen(false);
     setExecutionMode(null);
     setPresenceState(AthenaPresenceState.IDLE);
@@ -1108,6 +1112,51 @@ function completedObjectiveMemory(objective: string): Partial<WorkspaceMemory> {
 
 function cleanObjectiveText(value: string) {
   return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+function buildOrchestrationSteps(objective: string) {
+  const normalized = objective.toLowerCase();
+  const capabilitySteps: string[] = [];
+
+  if (/\b(tender|bid|proposal)\b/.test(normalized)) {
+    capabilitySteps.push(
+      "Tender Executive is reviewing submission requirements...",
+      "Procurement implications are being assessed...",
+    );
+  } else if (/\b(supplier|vendor)\b/.test(normalized)) {
+    capabilitySteps.push(
+      "Supplier Executive is assessing vendor context...",
+      "Commercial risk is being reviewed...",
+    );
+  } else if (/\b(contract|agreement)\b/.test(normalized)) {
+    capabilitySteps.push(
+      "Contract Executive is reviewing obligations...",
+      "Risk exposure is being evaluated...",
+    );
+  } else if (/\b(meeting|minutes)\b/.test(normalized)) {
+    capabilitySteps.push(
+      "Meeting Executive is extracting decisions and actions...",
+      "Follow-up accountability is being organized...",
+    );
+  } else if (/\b(daily|briefing|today)\b/.test(normalized)) {
+    capabilitySteps.push(
+      "Daily Briefing Executive is preparing the executive overview...",
+      "Priority signals are being ranked...",
+    );
+  }
+
+  if (!capabilitySteps.length) {
+    return defaultOrchestrationSteps;
+  }
+
+  return [
+    defaultOrchestrationSteps[0],
+    defaultOrchestrationSteps[1],
+    ...capabilitySteps,
+    defaultOrchestrationSteps[4],
+    defaultOrchestrationSteps[5],
+    defaultOrchestrationSteps[6],
+  ];
 }
 
 function detectMissionIntent(mission: string): MissionIntent {
