@@ -1827,6 +1827,7 @@ button {
   color: rgba(232, 220, 196, 0.64);
   font-size: 14px;
   line-height: 1.5;
+  transition: color 720ms ease, opacity 720ms ease;
 }
 
 .executive-workspace-section.timeline li::before {
@@ -1839,6 +1840,24 @@ button {
   border-radius: 50%;
   background: rgba(214, 179, 106, 0.82);
   box-shadow: 0 0 18px rgba(214, 179, 106, 0.18);
+  transition: background 720ms ease, box-shadow 720ms ease, opacity 720ms ease;
+}
+
+.executive-workspace-section.timeline li.flow-active {
+  color: rgba(255, 250, 240, 0.86);
+}
+
+.executive-workspace-section.timeline li.flow-active::before {
+  background: rgba(244, 223, 170, 0.96);
+  box-shadow: 0 0 22px rgba(214, 179, 106, 0.26);
+}
+
+.executive-workspace-section.timeline li.flow-pending {
+  color: rgba(232, 220, 196, 0.32);
+}
+
+.executive-workspace-section.timeline li.flow-pending::before {
+  opacity: 0.38;
 }
 
 .executive-workspace-section.details dl {
@@ -1856,11 +1875,28 @@ button {
 
 .executive-workspace-section.presence li {
   position: relative;
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
   padding-left: 14px;
   color: rgba(232, 220, 196, 0.62);
   font-size: 13px;
   line-height: 1.5;
   animation: executive-thinking-line 720ms ease both;
+}
+
+.executive-workspace-section.presence li strong {
+  color: rgba(255, 250, 240, 0.72);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.executive-workspace-section.presence li span {
+  color: rgba(214, 179, 106, 0.62);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
 }
 
 .executive-workspace-section.presence li::before {

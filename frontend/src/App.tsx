@@ -32,14 +32,7 @@ import {
 } from "./services/workspaceMemory";
 import {
   createErrorConversation,
-  createContractConversation,
-  createDailyBriefingConversation,
-  createMeetingConversation,
-  createMissionConversation,
-  createProcurementConversation,
-  createReasoningConversation,
-  createSupplierConversation,
-  createTenderConversation,
+  createCompletionConversation,
   currentProtocolGreeting,
   protocolDelayForNextLine,
   type ConversationProtocolLine,
@@ -87,6 +80,10 @@ type MissionState =
   | "Executive Consolidation"
   | "Executive Recommendation Ready"
   | "Mission Complete";
+type DepartmentPresence = {
+  name: string;
+  status: "Active" | "Reviewed" | "Consolidating" | "Consulted" | "Complete";
+};
 
 type MissionIntent = {
   hint: string;
@@ -165,7 +162,7 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
   const [eventBaselineIds, setEventBaselineIds] = useState<string[]>([]);
   const [eventTimelineActive, setEventTimelineActive] = useState(false);
   const [missionState, setMissionState] = useState<MissionState>("Mission Received");
-  const [departmentPresence, setDepartmentPresence] = useState<string[]>([]);
+  const [departmentPresence, setDepartmentPresence] = useState<DepartmentPresence[]>([]);
   const missionIntent = detectMissionIntent(mission);
   const hasDraftMission = mission.trim().length > 0;
   const greetingMessage = missionIntent.hint ? missionIntent.greeting : missionIntent.greeting;
@@ -182,8 +179,7 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
   const showExecutiveWorkspace = Boolean(
     submittedMission &&
     !missionError &&
-    (isExecuting || hasExecutiveResponse || visibleSteps.length > 0) &&
-    (!isSpeaking || isExecuting),
+    (isExecuting || hasExecutiveResponse || visibleSteps.length > 0),
   );
   const chamberLines = buildChamberLines({
     arrivalComplete,
@@ -282,23 +278,7 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
       return;
     }
 
-    const conversation = missionError
-      ? createErrorConversation(missionError)
-      : briefingResult
-        ? createDailyBriefingConversation(briefingResult)
-      : meetingResult
-        ? createMeetingConversation(meetingResult)
-      : procurementResult
-        ? createProcurementConversation(procurementResult)
-      : contractResult
-        ? createContractConversation(contractResult)
-      : supplierResult
-        ? createSupplierConversation(supplierResult)
-      : tenderResult
-        ? createTenderConversation(tenderResult)
-      : reasoningResult
-        ? createReasoningConversation(reasoningResult)
-        : createMissionConversation(missionResult);
+    const conversation = missionError ? createErrorConversation(missionError) : createCompletionConversation();
     const lines = conversation.lines;
 
     if (protocolLines.length === 0) {
@@ -800,22 +780,6 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
           briefingResult={briefingResult}
         />
 
-        <section
-          className={isExecuting ? "command-timeline visible" : "command-timeline"}
-          aria-live="polite"
-        >
-            <div className="command-timeline-header">
-              <span>Executive thinking</span>
-            </div>
-
-            <ol>
-              {visibleSteps.map((step, index) => (
-                <li key={step} className={index === visibleSteps.length - 1 && isExecuting ? "active" : "complete"}>
-                  <p>{step}</p>
-                </li>
-              ))}
-            </ol>
-          </section>
       </div>
 
       {activePath !== "/" && (
@@ -877,7 +841,7 @@ function ExecutiveWorkspacePanel({
   mission: string;
   timelineSteps: string[];
   missionState: MissionState;
-  departmentPresence: string[];
+  departmentPresence: DepartmentPresence[];
   hasExecutiveResponse: boolean;
   missionResult: ExecutiveMissionResponse | null;
   reasoningResult: ExecutiveReasoningResponse | null;
@@ -905,23 +869,15 @@ function ExecutiveWorkspacePanel({
     meetingResult,
     briefingResult,
   });
+  const flowSteps = buildLiveMissionFlow(timelineSteps, missionState, hasExecutiveResponse);
+  const showPresence = departmentPresence.length > 0 && missionStateRank(missionState) >= missionStateRank("Departments Working");
+  const showAssessment = Boolean(briefing.assessment) && missionStateRank(missionState) >= missionStateRank("Executive Recommendation Ready");
+  const showRecommendation = Boolean(briefing.recommendation) && missionStateRank(missionState) >= missionStateRank("Executive Recommendation Ready");
+  const showDetails = briefing.details.length > 0 && missionStateRank(missionState) >= missionStateRank("Executive Recommendation Ready");
+  const showRisks = (briefing.risks.length > 0 || briefing.missingInformation.length > 0) && missionStateRank(missionState) >= missionStateRank("Executive Recommendation Ready");
 
   return (
     <section className="executive-workspace-panel" aria-label="Executive workspace">
-      {briefing.assessment && (
-        <div className="executive-workspace-section assessment">
-          <span>Executive Assessment</span>
-          <p>{briefing.assessment}</p>
-        </div>
-      )}
-
-      {briefing.recommendation && (
-        <div className="executive-workspace-section action">
-          <span>Next Executive Action</span>
-          <p>{briefing.recommendation}</p>
-        </div>
-      )}
-
       <div className="executive-workspace-section mission">
         <span>Mission</span>
         <h2>{briefing.title}</h2>
@@ -937,18 +893,44 @@ function ExecutiveWorkspacePanel({
         </dl>
       </div>
 
-      {departmentPresence.length > 0 && (
+      <div className="executive-workspace-section timeline live-flow">
+        <span>Live Mission Flow</span>
+        <ol>
+          {flowSteps.map((step) => (
+            <li key={step.label} className={`flow-${step.status}`}>{step.label}</li>
+          ))}
+        </ol>
+      </div>
+
+      {showPresence && (
         <div className="executive-workspace-section presence">
           <span>Executive Presence</span>
           <ul>
             {departmentPresence.map((department) => (
-              <li key={department}>{department}</li>
+              <li key={department.name}>
+                <strong>{department.name}</strong>
+                <span>{department.status}</span>
+              </li>
             ))}
           </ul>
         </div>
       )}
 
-      {briefing.details.length > 0 && (
+      {showAssessment && (
+        <div className="executive-workspace-section assessment">
+          <span>Executive Assessment</span>
+          <p>{briefing.assessment}</p>
+        </div>
+      )}
+
+      {showRecommendation && (
+        <div className="executive-workspace-section action">
+          <span>Next Executive Action</span>
+          <p>{briefing.recommendation}</p>
+        </div>
+      )}
+
+      {showDetails && (
         <div className="executive-workspace-section details">
           <span>Mission Detail</span>
           <dl>
@@ -962,7 +944,7 @@ function ExecutiveWorkspacePanel({
         </div>
       )}
 
-      {briefing.risks.length > 0 && (
+      {showRisks && briefing.risks.length > 0 && (
         <div className="executive-workspace-section compact-list">
           <span>Risks</span>
           <ul>
@@ -973,7 +955,7 @@ function ExecutiveWorkspacePanel({
         </div>
       )}
 
-      {briefing.missingInformation.length > 0 && (
+      {showRisks && briefing.missingInformation.length > 0 && (
         <div className="executive-workspace-section compact-list">
           <span>Missing Information</span>
           <ul>
@@ -983,15 +965,6 @@ function ExecutiveWorkspacePanel({
           </ul>
         </div>
       )}
-
-      <div className="executive-workspace-section timeline">
-        <span>Mission Timeline</span>
-        <ol>
-          {(timelineSteps.length > 0 ? timelineSteps : missionTimelineFallback(missionState, hasExecutiveResponse)).map((step) => (
-            <li key={step}>{completedTimelineLabel(step)}</li>
-          ))}
-        </ol>
-      </div>
     </section>
   );
 }
@@ -1520,14 +1493,20 @@ async function readAthenaEventBaseline() {
 
 function currentExecutiveEvents(events: AthenaEvent[], baselineIds: string[], startedAt: string) {
   const baseline = new Set(baselineIds);
+  const recentFloor = Date.now() - 5 * 60 * 1000;
+  const isUsableEvent = (event: AthenaEvent) => isExecutiveEvent(event) && isRecentEnoughEvent(event, startedAt, recentFloor);
+
   if (baseline.size > 0) {
-    return events.filter((event) => !baseline.has(athenaEventIdentity(event)));
+    const newEvents = events.filter(
+      (event) => !baseline.has(athenaEventIdentity(event)) && isExecutiveEvent(event) && isRecentEnoughEvent(event, startedAt, recentFloor),
+    );
+    return newEvents.length > 0 ? newEvents : events.filter(isUsableEvent);
   }
 
   const started = parseAthenaTimestamp(startedAt);
   return events.filter((event) => {
     const eventTime = parseAthenaTimestamp(event.timestamp);
-    return Number.isNaN(started) || Number.isNaN(eventTime) || eventTime >= started - 750;
+    return isExecutiveEvent(event) && (Number.isNaN(started) || Number.isNaN(eventTime) || eventTime >= started - 750);
   });
 }
 
@@ -1558,6 +1537,28 @@ function parseAthenaTimestamp(value: unknown) {
 
   const hasTimezone = /(?:z|[+-]\d{2}:?\d{2})$/i.test(timestamp);
   return Date.parse(hasTimezone ? timestamp : `${timestamp}Z`);
+}
+
+function isRecentEnoughEvent(event: AthenaEvent, startedAt: string, recentFloor: number) {
+  const eventTime = parseAthenaTimestamp(event.timestamp);
+  const started = parseAthenaTimestamp(startedAt);
+  if (Number.isNaN(eventTime)) {
+    return true;
+  }
+
+  if (!Number.isNaN(started) && eventTime >= started - 750) {
+    return true;
+  }
+
+  return eventTime >= recentFloor;
+}
+
+function isExecutiveEvent(event: AthenaEvent) {
+  const eventType = String(event.event_type || "");
+  const source = String(event.source || "");
+  return /Executive|Mission|Capability|Brain|Planning|Execution|Organization|Operations|Knowledge|Reasoning|Approval|Tender|Supplier|Contract|Procurement|Meeting|Briefing/i.test(
+    `${eventType} ${source}`,
+  );
 }
 
 function executiveEventLine(event: AthenaEvent) {
@@ -1666,15 +1667,21 @@ function hasEvent(events: AthenaEvent[], pattern: RegExp) {
 }
 
 function executiveDepartmentPresence(events: AthenaEvent[]) {
-  const departments: string[] = [];
-  const seen = new Set<string>();
+  const departments: DepartmentPresence[] = [];
+  const indexByName = new Map<string, number>();
 
   for (const event of events) {
     for (const department of departmentsForEvent(event)) {
-      const key = department.toLowerCase();
-      if (!seen.has(key)) {
-        seen.add(key);
+      const key = department.name.toLowerCase();
+      const existingIndex = indexByName.get(key);
+      if (existingIndex === undefined) {
+        indexByName.set(key, departments.length);
         departments.push(department);
+      } else {
+        departments[existingIndex] = {
+          ...departments[existingIndex],
+          status: moreAdvancedDepartmentStatus(departments[existingIndex].status, department.status),
+        };
       }
     }
   }
@@ -1686,48 +1693,107 @@ function departmentsForEvent(event: AthenaEvent) {
   const eventType = String(event.event_type || "");
   const source = String(event.source || "");
   const capability = String(event.payload?.capability || "");
-  const departments: string[] = [];
+  const departments: DepartmentPresence[] = [];
+  const status = departmentStatusForEvent(event);
 
-  if (/TenderExecutive/.test(eventType)) departments.push("Tender Executive");
-  if (/SupplierExecutive/.test(eventType)) departments.push("Supplier Executive");
-  if (/ContractExecutive/.test(eventType)) departments.push("Contract Executive");
-  if (/ProcurementExecutive/.test(eventType)) departments.push("Procurement Executive");
-  if (/MeetingExecutive/.test(eventType)) departments.push("Meeting Executive");
-  if (/DailyBriefing/.test(eventType)) departments.push("Daily Briefing Executive");
-  if (/ExecutiveReasoning|BrainObjective|CapabilityExecution|ExecutiveExecution|ExecutionEvaluation/.test(eventType) || /executive_brain/.test(source)) departments.push("Reasoning Engine");
-  if (/OrganizationImpact/.test(eventType) || /organization/.test(source)) departments.push("Organization Model");
-  if (/Knowledge|ReasoningChain/.test(eventType) || /knowledge_graph|reasoning_graph/.test(source)) departments.push("Knowledge Graph");
-  if (/OperationsOverview/.test(eventType) || /operations/.test(source)) departments.push("Operations Center");
-  if (/Mission/.test(eventType) || /mission_controller|mission_context/.test(source)) departments.push("Mission Runtime");
-  if (/approval/i.test(eventType) || /approval/.test(source)) departments.push("Approval Workflow");
-  if (/supplier/i.test(capability)) departments.push("Supplier Executive");
-  if (/risk|obligation|extraction|decision|action|file/i.test(capability)) departments.push("Executive Brain");
+  if (/TenderExecutive/.test(eventType)) departments.push({ name: "Tender Executive", status });
+  if (/SupplierExecutive/.test(eventType)) departments.push({ name: "Supplier Executive", status });
+  if (/ContractExecutive/.test(eventType)) departments.push({ name: "Contract Executive", status });
+  if (/ProcurementExecutive/.test(eventType)) departments.push({ name: "Procurement Executive", status });
+  if (/MeetingExecutive/.test(eventType)) departments.push({ name: "Meeting Executive", status });
+  if (/DailyBriefing/.test(eventType)) departments.push({ name: "Daily Briefing Executive", status });
+  if (/ExecutiveReasoning|BrainObjective|CapabilityExecution|ExecutiveExecution|ExecutionEvaluation/.test(eventType) || /executive_brain/.test(source)) departments.push({ name: "Reasoning Engine", status: /Completed|Evaluation|Learned/.test(eventType) ? "Consolidating" : status });
+  if (/OrganizationImpact/.test(eventType) || /organization/.test(source)) departments.push({ name: "Organization Model", status: "Reviewed" });
+  if (/Knowledge|ReasoningChain/.test(eventType) || /knowledge_graph|reasoning_graph/.test(source)) departments.push({ name: "Knowledge Graph", status: "Consulted" });
+  if (/OperationsOverview/.test(eventType) || /operations/.test(source)) departments.push({ name: "Operations Center", status: "Consulted" });
+  if (/Mission/.test(eventType) || /mission_controller|mission_context/.test(source)) departments.push({ name: "Mission Runtime", status });
+  if (/approval/i.test(eventType) || /approval/.test(source)) departments.push({ name: "Approval Workflow", status: /Required/.test(eventType) ? "Reviewed" : status });
+  if (/supplier/i.test(capability)) departments.push({ name: "Supplier Executive", status });
+  if (/risk|obligation|extraction|decision|action|file/i.test(capability)) departments.push({ name: "Executive Brain", status });
 
   return departments;
 }
 
-function missionTimelineFallback(missionState: MissionState, hasExecutiveResponse: boolean) {
-  if (hasExecutiveResponse || missionState === "Mission Complete") {
-    return ["Mission Initiated", "Executive Assessment", "Recommendation Delivered"];
-  }
+function departmentStatusForEvent(event: AthenaEvent): DepartmentPresence["status"] {
+  const eventType = String(event.event_type || "");
+  const result = String(event.payload?.result || "");
 
-  if (missionState === "Executive Recommendation Ready") {
-    return ["Mission Initiated", "Executive Assessment", "Recommendation Prepared"];
+  if (/Completed|Generated|Approved|Rejected/.test(eventType) || result === "success") {
+    return "Complete";
   }
-
-  if (missionState === "Executive Consolidation") {
-    return ["Mission Initiated", "Departments Working", "Executive Consolidation"];
+  if (/Organization|Knowledge|ReasoningChain/.test(eventType)) {
+    return "Reviewed";
   }
-
-  if (missionState === "Departments Working") {
-    return ["Mission Initiated", "Departments Working"];
+  if (/Operations/.test(eventType)) {
+    return "Consulted";
   }
-
-  return ["Mission Initiated"];
+  if (/Evaluation|ParallelExecution|DependencyLevelCompleted/.test(eventType)) {
+    return "Consolidating";
+  }
+  return "Active";
 }
 
-function completedTimelineLabel(step: string) {
-  return String(step || "").replace(/\.\.\.$/, "").replace(/\.$/, "");
+function moreAdvancedDepartmentStatus(
+  current: DepartmentPresence["status"],
+  next: DepartmentPresence["status"],
+) {
+  const order: DepartmentPresence["status"][] = ["Active", "Consulted", "Reviewed", "Consolidating", "Complete"];
+  return order.indexOf(next) > order.indexOf(current) ? next : current;
+}
+
+function buildLiveMissionFlow(timelineSteps: string[], missionState: MissionState, hasExecutiveResponse: boolean) {
+  const joinedSteps = timelineSteps.join(" ").toLowerCase();
+  const completeRank = hasExecutiveResponse ? missionStateRank("Mission Complete") : missionStateRank(missionState);
+  const flow = [
+    {
+      label: "Mission received",
+      rank: missionStateRank("Mission Received"),
+      matched: /objective received|mission execution|mission initiated|mission objective/i.test(joinedSteps),
+    },
+    {
+      label: "Departments engaged",
+      rank: missionStateRank("Departments Working"),
+      matched: /department|executive engaged|capability|tender|supplier|contract|procurement|meeting|briefing/i.test(joinedSteps),
+    },
+    {
+      label: "Executive assessment running",
+      rank: missionStateRank("Assessment Running"),
+      matched: /assessment|brain engaged|reasoning|scope|plan/i.test(joinedSteps),
+    },
+    {
+      label: "Strategic impact reviewed",
+      rank: missionStateRank("Executive Consolidation"),
+      matched: /impact|operations|knowledge|dependencies|readiness|consolidated/i.test(joinedSteps),
+    },
+    {
+      label: "Recommendation prepared",
+      rank: missionStateRank("Executive Recommendation Ready"),
+      matched: /recommendation|briefing|action prepared|delivered/i.test(joinedSteps),
+    },
+    {
+      label: "Mission complete",
+      rank: missionStateRank("Mission Complete"),
+      matched: /completed|complete|delivered/i.test(joinedSteps) || hasExecutiveResponse,
+    },
+  ];
+
+  return flow.map((step) => ({
+    label: step.label,
+    status: step.rank < completeRank || step.matched ? "complete" : step.rank === completeRank ? "active" : "pending",
+  }));
+}
+
+function missionStateRank(state: MissionState) {
+  const ranks: Record<MissionState, number> = {
+    "Mission Received": 1,
+    "Assessment Running": 2,
+    "Departments Working": 3,
+    "Executive Consolidation": 4,
+    "Executive Recommendation Ready": 5,
+    "Mission Complete": 6,
+  };
+
+  return ranks[state];
 }
 
 function conciseMissionTitle(mission: string) {

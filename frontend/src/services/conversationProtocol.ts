@@ -169,6 +169,16 @@ export function createDailyBriefingConversation(result: DailyBriefingExecutiveRe
   });
 }
 
+export function createCompletionConversation(): ConversationProtocolResult {
+  return {
+    offer: "View Executive Brief",
+    lines: [
+      { stage: "context", text: "I've completed the assessment." },
+      { stage: "offer", text: "The executive briefing is ready." },
+    ],
+  };
+}
+
 export function createErrorConversation(message: string): ConversationProtocolResult {
   return createConversation({
     context: contextLines.error,
