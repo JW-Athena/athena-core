@@ -67,13 +67,14 @@ const routes: WorkspaceRoute[] = [
   { path: "/settings", label: "Settings", title: "Settings", eyebrow: "System Controls" },
 ];
 
-const missionSteps = [
-  "Mission accepted",
-  "Planning objective",
-  "Executing capabilities",
-  "Evaluating outcome",
-  "Learning from execution",
-  "Checking approvals",
+const executiveThinkingSteps = [
+  "Executive Brain engaged...",
+  "Understanding objective...",
+  "Selecting executive capabilities...",
+  "Consulting organizational knowledge...",
+  "Evaluating strategic impact...",
+  "Preparing executive recommendation...",
+  "Finalizing executive recommendation...",
 ];
 
 type ExecutionMode = "mission" | "reasoning" | "tender" | "supplier" | "contract" | "procurement" | "meeting" | "briefing" | null;
@@ -118,6 +119,10 @@ function App() {
 
 function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: string }) {
   const [workspaceMemory, setWorkspaceMemory] = useState<WorkspaceMemory | null>(() => readWorkspaceMemory());
+  const [arrivalRestState] = useState(() => (workspaceMemory ? AthenaPresenceState.WAITING : AthenaPresenceState.IDLE));
+  const [arrivalExecutiveLine] = useState(() => chooseArrivalExecutiveLine(workspaceMemory));
+  const [arrivalComplete, setArrivalComplete] = useState(false);
+  const [arrivalLines, setArrivalLines] = useState<string[]>([]);
   const [mission, setMission] = useState("");
   const [submittedMission, setSubmittedMission] = useState(() => workspaceMemory?.lastMission ?? "");
   const [isExecuting, setIsExecuting] = useState(false);
@@ -147,33 +152,59 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
   const continuityGreeting = workspaceMemory?.lastMission ? buildContinuityGreeting(workspaceMemory) : "";
   const greetingMessage = missionIntent.hint ? missionIntent.greeting : continuityGreeting || missionIntent.greeting;
   const chamberLines = buildChamberLines({
+    arrivalComplete,
+    arrivalLines,
     missionIntent,
     workspaceMemory,
     submittedMission,
     visibleProtocolLines,
     isExecuting,
-    executionMode,
     missionError,
     greetingMessage,
   });
+
+  useEffect(() => {
+    setPresenceState(AthenaPresenceState.SPEAKING);
+
+    const firstLineTimer = window.setTimeout(() => {
+      setArrivalLines([arrivalGreeting()]);
+    }, 720);
+    const secondLineTimer = window.setTimeout(() => {
+      setArrivalLines([arrivalGreeting(), arrivalExecutiveLine]);
+    }, 1420);
+    const completeTimer = window.setTimeout(() => {
+      setArrivalComplete(true);
+      setPresenceState(arrivalRestState);
+    }, 2600);
+
+    return () => {
+      window.clearTimeout(firstLineTimer);
+      window.clearTimeout(secondLineTimer);
+      window.clearTimeout(completeTimer);
+    };
+  }, [arrivalExecutiveLine, arrivalRestState, setPresenceState]);
 
   useEffect(() => {
     if (!isExecuting) {
       return;
     }
 
-    if (visibleSteps.length >= missionSteps.length) {
+    if (visibleSteps.length >= executiveThinkingSteps.length) {
       return;
     }
 
     const timer = window.setTimeout(() => {
-      setVisibleSteps((steps) => [...steps, missionSteps[steps.length]]);
-    }, 1000);
+      setVisibleSteps((steps) => [...steps, executiveThinkingSteps[steps.length]]);
+    }, visibleSteps.length === 0 ? 220 : 760);
 
     return () => window.clearTimeout(timer);
   }, [isExecuting, visibleSteps.length]);
 
   useEffect(() => {
+    if (isExecuting) {
+      return;
+    }
+
     if (!missionResult && !reasoningResult && !tenderResult && !supplierResult && !contractResult && !procurementResult && !meetingResult && !briefingResult && !missionError) {
       return;
     }
@@ -198,8 +229,10 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
     const lines = conversation.lines;
 
     if (protocolLines.length === 0) {
-      setProtocolLines(lines);
-      return;
+      const timer = window.setTimeout(() => {
+        setProtocolLines(lines);
+      }, visibleSteps.length > 0 ? 760 : 0);
+      return () => window.clearTimeout(timer);
     }
 
     if (visibleProtocolLines.length >= protocolLines.length) {
@@ -253,6 +286,7 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
     return () => window.clearTimeout(timer);
   }, [
     isSpeaking,
+    isExecuting,
     missionError,
     missionResult,
     briefingResult,
@@ -264,11 +298,16 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
     supplierResult,
     tenderResult,
     setPresenceState,
+    visibleSteps.length,
     visibleProtocolLines.length,
   ]);
 
   useEffect(() => {
     if (isExecuting || isSpeaking || submittedMission) {
+      return;
+    }
+
+    if (!arrivalComplete) {
       return;
     }
 
@@ -282,7 +321,7 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
     }, 260);
 
     return () => window.clearTimeout(timer);
-  }, [hasDraftMission, isExecuting, isSpeaking, setPresenceState, submittedMission]);
+  }, [arrivalComplete, hasDraftMission, isExecuting, isSpeaking, setPresenceState, submittedMission]);
 
   const handleExecuteMission = async () => {
     const nextMission = mission.trim();
@@ -291,7 +330,7 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
     }
 
     setSubmittedMission(nextMission);
-    setVisibleSteps([missionSteps[0]]);
+    setVisibleSteps([]);
     setMissionResult(null);
     setReasoningResult(null);
     setTenderResult(null);
@@ -457,11 +496,6 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
       );
       setIsSpeaking(true);
     } finally {
-      if (looksLikeExecutiveSkillQuestion(nextMission)) {
-        setVisibleSteps([]);
-      } else {
-        setVisibleSteps(missionSteps);
-      }
       setIsExecuting(false);
     }
   };
@@ -527,7 +561,10 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
   };
 
   return (
-    <section className={`executive-home env-state-${presenceState}`}>
+    <section
+      className={`executive-home env-state-${presenceState}${arrivalComplete ? " arrival-ready" : " arrival-active"}`}
+      data-execution-mode={executionMode || "idle"}
+    >
       <AthenaEnvironment state={presenceState} />
 
       <div className="command-stage">
@@ -544,7 +581,7 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
           ))}
         </section>
 
-        <form className={submittedMission ? "command-console compact" : "command-console"} onSubmit={(event) => event.preventDefault()}>
+        <form className={`${submittedMission ? "command-console compact" : "command-console"}${arrivalComplete ? "" : " arrival-hidden"}`} onSubmit={(event) => event.preventDefault()}>
           <label htmlFor="executive-mission">Executive mission</label>
           <textarea
             id="executive-mission"
@@ -578,7 +615,7 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
                 void handleExecuteMission();
               }
             }}
-            placeholder="Tell me what you want to accomplish..."
+            placeholder="Define the next objective..."
           />
           {missionIntent.hint && <p className="mission-hint">Possible mission: {missionIntent.hint}</p>}
           <div className="chamber-actions">
@@ -592,7 +629,7 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
             </button>
             {mission.trim() && (
               <button type="button" onClick={handleExecuteMission} disabled={isExecuting || isSpeaking}>
-                {looksLikeExecutiveQuestion(mission) ? "Ask ATHENA" : "Execute Mission"}
+                Present Objective
               </button>
             )}
           </div>
@@ -616,18 +653,16 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
         )}
 
         <section
-          className={isExecuting && executionMode === "mission" ? "command-timeline visible" : "command-timeline"}
+          className={isExecuting ? "command-timeline visible" : "command-timeline"}
           aria-live="polite"
         >
             <div className="command-timeline-header">
-              <span>{isExecuting ? "Mission executing" : "Mission response received"}</span>
-              <strong>{visibleSteps.length}/{missionSteps.length}</strong>
+              <span>Executive thinking</span>
             </div>
 
             <ol>
               {visibleSteps.map((step, index) => (
                 <li key={step} className={index === visibleSteps.length - 1 && isExecuting ? "active" : "complete"}>
-                  <span />
                   <p>{step}</p>
                 </li>
               ))}
@@ -949,34 +984,36 @@ function ExecutiveBriefDrawer({
 }
 
 function buildChamberLines({
+  arrivalComplete,
+  arrivalLines,
   missionIntent,
   workspaceMemory,
   submittedMission,
   visibleProtocolLines,
   isExecuting,
-  executionMode,
   missionError,
   greetingMessage,
 }: {
+  arrivalComplete: boolean;
+  arrivalLines: string[];
   missionIntent: MissionIntent;
   workspaceMemory: WorkspaceMemory | null;
   submittedMission: string;
   visibleProtocolLines: ConversationProtocolLine[];
   isExecuting: boolean;
-  executionMode: ExecutionMode;
   missionError: string;
   greetingMessage: string;
 }) {
+  if (!arrivalComplete) {
+    return arrivalLines;
+  }
+
   if (missionError) {
     return [missionError];
   }
 
   if (isExecuting) {
-    if (executionMode === "reasoning") {
-      return ["ATHENA is reasoning..."];
-    }
-
-    return ["Mission accepted.", "I am evaluating the objective.", "I will return with a recommendation."];
+    return [];
   }
 
   if (submittedMission && visibleProtocolLines.length > 0) {
@@ -1035,6 +1072,41 @@ function buildContinuityGreeting(memory: WorkspaceMemory) {
 }
 
 const buildCurrentGreeting = currentProtocolGreeting;
+
+function arrivalGreeting() {
+  const hour = new Date().getHours();
+
+  if (hour < 12) {
+    return "Good morning, Wassim.";
+  }
+
+  if (hour < 18) {
+    return "Good afternoon, Wassim.";
+  }
+
+  return "Good evening, Wassim.";
+}
+
+function chooseArrivalExecutiveLine(memory: WorkspaceMemory | null) {
+  if (!memory) {
+    return "The organization is operating normally.";
+  }
+
+  const hasPendingDecision =
+    memory.lastPresenceState === AthenaPresenceState.APPROVAL ||
+    memory.lastPresenceState === AthenaPresenceState.THINKING ||
+    memory.lastPresenceState === AthenaPresenceState.UNDERSTANDING;
+
+  if (hasPendingDecision) {
+    return "You have executive missions awaiting your decision.";
+  }
+
+  if (memory.lastMission || memory.lastRecommendation || memory.lastInteractionTime) {
+    return "Your latest executive assessment has been completed.";
+  }
+
+  return "The organization is operating normally.";
+}
 
 function getSessionReference(timestamp: string) {
   if (!timestamp) {
