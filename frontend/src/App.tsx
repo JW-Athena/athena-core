@@ -74,15 +74,17 @@ const defaultOrchestrationSteps = [
 
 type ExecutionMode = "mission" | "reasoning" | "tender" | "supplier" | "contract" | "procurement" | "meeting" | "briefing" | null;
 type MissionState =
-  | "Mission Received"
-  | "Assessment Running"
-  | "Departments Working"
+  | "Mission Created"
+  | "Mission Accepted"
+  | "Executive Brain Activated"
+  | "Departments Mobilized"
+  | "Knowledge Expansion"
   | "Executive Consolidation"
-  | "Executive Recommendation Ready"
+  | "Executive Recommendation"
   | "Mission Complete";
 type DepartmentPresence = {
   name: string;
-  status: "Active" | "Reviewed" | "Consolidating" | "Consulted" | "Complete";
+  status: "Waiting" | "Working" | "Completed";
 };
 
 type MissionIntent = {
@@ -161,7 +163,7 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
   const [missionStartedAt, setMissionStartedAt] = useState("");
   const [eventBaselineIds, setEventBaselineIds] = useState<string[]>([]);
   const [eventTimelineActive, setEventTimelineActive] = useState(false);
-  const [missionState, setMissionState] = useState<MissionState>("Mission Received");
+  const [missionState, setMissionState] = useState<MissionState>("Mission Created");
   const [departmentPresence, setDepartmentPresence] = useState<DepartmentPresence[]>([]);
   const missionIntent = detectMissionIntent(mission);
   const hasDraftMission = mission.trim().length > 0;
@@ -390,7 +392,7 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
     setMissionStartedAt(executionStartedAt);
     setEventBaselineIds([]);
     setEventTimelineActive(false);
-    setMissionState("Mission Received");
+    setMissionState("Mission Accepted");
     setDepartmentPresence([]);
     setOrchestrationSteps(buildOrchestrationSteps(nextMission));
     setVisibleSteps([]);
@@ -550,7 +552,7 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
         );
       }
       setPresenceState(AthenaPresenceState.SPEAKING);
-      setMissionState("Executive Recommendation Ready");
+      setMissionState("Executive Recommendation");
       responseReceived = true;
       setIsSpeaking(true);
     } catch (error) {
@@ -605,7 +607,7 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
     setMissionStartedAt("");
     setEventBaselineIds([]);
     setEventTimelineActive(false);
-    setMissionState("Mission Received");
+    setMissionState("Mission Created");
     setDepartmentPresence([]);
     setOrchestrationSteps(defaultOrchestrationSteps);
     setMissionResult(null);
@@ -663,7 +665,7 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
     setMissionStartedAt("");
     setEventBaselineIds([]);
     setEventTimelineActive(false);
-    setMissionState("Mission Received");
+    setMissionState("Mission Created");
     setDepartmentPresence([]);
     setOrchestrationSteps(defaultOrchestrationSteps);
     setBriefOpen(false);
@@ -786,15 +788,23 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
         <ChamberOverlay route={route} activePath={activePath} />
       )}
 
-      <ExecutiveBriefDrawer
-        open={briefOpen}
-        result={missionResult}
-        reasoningResult={reasoningResult}
-        tenderResult={tenderResult}
-        supplierResult={supplierResult}
-        steps={visibleSteps}
-        onClose={() => setBriefOpen(false)}
-      />
+        <ExecutiveBriefDrawer
+          open={briefOpen}
+          mission={submittedMission}
+          missionState={missionState}
+          hasExecutiveResponse={hasExecutiveResponse}
+          missionResult={missionResult}
+          reasoningResult={reasoningResult}
+          tenderResult={tenderResult}
+          supplierResult={supplierResult}
+          contractResult={contractResult}
+          procurementResult={procurementResult}
+          meetingResult={meetingResult}
+          briefingResult={briefingResult}
+          timelineSteps={visibleSteps}
+          departmentPresence={departmentPresence}
+          onClose={() => setBriefOpen(false)}
+        />
     </section>
   );
 }
@@ -870,11 +880,21 @@ function ExecutiveWorkspacePanel({
     briefingResult,
   });
   const flowSteps = buildLiveMissionFlow(timelineSteps, missionState, hasExecutiveResponse);
-  const showPresence = departmentPresence.length > 0 && missionStateRank(missionState) >= missionStateRank("Departments Working");
-  const showAssessment = Boolean(briefing.assessment) && missionStateRank(missionState) >= missionStateRank("Executive Recommendation Ready");
-  const showRecommendation = Boolean(briefing.recommendation) && missionStateRank(missionState) >= missionStateRank("Executive Recommendation Ready");
-  const showDetails = briefing.details.length > 0 && missionStateRank(missionState) >= missionStateRank("Executive Recommendation Ready");
-  const showRisks = (briefing.risks.length > 0 || briefing.missingInformation.length > 0) && missionStateRank(missionState) >= missionStateRank("Executive Recommendation Ready");
+  const coordinatedDepartments = buildDepartmentCoordination({
+    mission,
+    departmentPresence,
+    tenderResult,
+    supplierResult,
+    contractResult,
+    procurementResult,
+    meetingResult,
+    briefingResult,
+  });
+  const showPresence = coordinatedDepartments.length > 0 && missionStateRank(missionState) >= missionStateRank("Mission Accepted");
+  const showAssessment = Boolean(briefing.assessment) && missionStateRank(missionState) >= missionStateRank("Executive Recommendation");
+  const showRecommendation = Boolean(briefing.recommendation) && missionStateRank(missionState) >= missionStateRank("Executive Recommendation");
+  const showIntelligence = briefing.details.length > 0 && missionStateRank(missionState) >= missionStateRank("Executive Consolidation");
+  const showRisks = (briefing.risks.length > 0 || briefing.missingInformation.length > 0) && missionStateRank(missionState) >= missionStateRank("Executive Consolidation");
 
   return (
     <section className="executive-workspace-panel" aria-label="Executive workspace">
@@ -906,7 +926,7 @@ function ExecutiveWorkspacePanel({
         <div className="executive-workspace-section presence">
           <span>Executive Presence</span>
           <ul>
-            {departmentPresence.map((department) => (
+            {coordinatedDepartments.map((department) => (
               <li key={department.name}>
                 <strong>{department.name}</strong>
                 <span>{department.status}</span>
@@ -930,9 +950,9 @@ function ExecutiveWorkspacePanel({
         </div>
       )}
 
-      {showDetails && (
+      {showIntelligence && (
         <div className="executive-workspace-section details">
-          <span>Mission Detail</span>
+          <span>Mission Intelligence</span>
           <dl>
             {briefing.details.map((detail) => (
               <div key={detail.label}>
@@ -1057,274 +1077,159 @@ function buildExecutiveWorkspaceBrief({
 
 function ExecutiveBriefDrawer({
   open,
-  result,
+  mission,
+  missionState,
+  hasExecutiveResponse,
+  missionResult,
   reasoningResult,
   tenderResult,
   supplierResult,
-  steps,
+  contractResult,
+  procurementResult,
+  meetingResult,
+  briefingResult,
+  timelineSteps,
+  departmentPresence,
   onClose,
 }: {
   open: boolean;
-  result: ExecutiveMissionResponse | null;
+  mission: string;
+  missionState: MissionState;
+  hasExecutiveResponse: boolean;
+  missionResult: ExecutiveMissionResponse | null;
   reasoningResult: ExecutiveReasoningResponse | null;
   tenderResult: TenderExecutiveResponse | null;
   supplierResult: SupplierExecutiveResponse | null;
-  steps: string[];
+  contractResult: ContractExecutiveResponse | null;
+  procurementResult: ProcurementExecutiveResponse | null;
+  meetingResult: MeetingExecutiveResponse | null;
+  briefingResult: DailyBriefingExecutiveResponse | null;
+  timelineSteps: string[];
+  departmentPresence: DepartmentPresence[];
   onClose: () => void;
 }) {
-  const executiveResponse = result?.executive_response;
-  const evaluation = result?.mission_evaluation;
-  const approvalRequest = result?.approval_request;
+  const briefing = buildExecutiveWorkspaceBrief({
+    mission,
+    missionState,
+    hasExecutiveResponse,
+    missionResult,
+    reasoningResult,
+    tenderResult,
+    supplierResult,
+    contractResult,
+    procurementResult,
+    meetingResult,
+    briefingResult,
+  });
+  const flowSteps = buildLiveMissionFlow(timelineSteps, missionState, hasExecutiveResponse);
+  const coordinatedDepartments = buildDepartmentCoordination({
+    mission,
+    departmentPresence,
+    tenderResult,
+    supplierResult,
+    contractResult,
+    procurementResult,
+    meetingResult,
+    briefingResult,
+  });
 
   return (
     <aside className={open ? "executive-brief-drawer open" : "executive-brief-drawer"} aria-hidden={!open}>
       <div className="brief-drawer-header">
         <div>
           <span>Executive Brief</span>
-          <h3>
-            {tenderResult
-              ? "Tender Executive Brief"
-              : supplierResult
-                ? "Supplier Evidence"
-                : reasoningResult
-                  ? "Reasoning Evidence"
-                  : "Mission Detail"}
-          </h3>
+          <h3>{briefing.title}</h3>
         </div>
         <button type="button" onClick={onClose} aria-label="Close executive brief">
           Close
         </button>
       </div>
 
-      {supplierResult ? (
-        <div className="brief-drawer-body">
-          <section>
-            <span>Executive Summary</span>
-            <p>{supplierResult.executive_summary || "No executive summary was returned."}</p>
-            <p>{supplierResult.executive_reasoning || "No executive reasoning was returned."}</p>
-          </section>
+      <div className="brief-drawer-body">
+        <section>
+          <span>Mission</span>
+          <dl>
+            <div>
+              <dt>Type</dt>
+              <dd>{briefing.type}</dd>
+            </div>
+            <div>
+              <dt>Status</dt>
+              <dd>{briefing.status}</dd>
+            </div>
+          </dl>
+        </section>
 
+        {briefing.assessment && (
           <section>
-            <span>Supplier Direction</span>
+            <span>Executive Assessment</span>
+            <p>{briefing.assessment}</p>
+          </section>
+        )}
+
+        {briefing.recommendation && (
+          <section>
+            <span>Next Executive Action</span>
+            <p>{briefing.recommendation}</p>
+          </section>
+        )}
+
+        {briefing.details.length > 0 && (
+          <section>
+            <span>Mission Intelligence</span>
             <dl>
-              <div>
-                <dt>Decision</dt>
-                <dd>{supplierResult.supplier_decision || "Review"}</dd>
-              </div>
-              <div>
-                <dt>Confidence</dt>
-                <dd>{formatConfidence(supplierResult.confidence)}</dd>
-              </div>
-              <div>
-                <dt>Risk Level</dt>
-                <dd>{supplierResult.risk_level || "Unknown"}</dd>
-              </div>
-            </dl>
-          </section>
-
-          <section>
-            <span>Key Strengths</span>
-            <ol>
-              {(supplierResult.key_strengths || []).map((strength) => (
-                <li key={strength}>{strength}</li>
-              ))}
-            </ol>
-          </section>
-
-          <section>
-            <span>Key Concerns</span>
-            <ol>
-              {(supplierResult.key_concerns || []).map((concern) => (
-                <li key={concern}>{concern}</li>
-              ))}
-            </ol>
-          </section>
-
-          <section>
-            <span>Recommended Actions</span>
-            <ol>
-              {(supplierResult.recommended_actions || []).map((action) => (
-                <li key={action}>{action}</li>
-              ))}
-            </ol>
-          </section>
-        </div>
-      ) : tenderResult ? (
-        <div className="brief-drawer-body">
-          <section>
-            <span>Executive Summary</span>
-            <p>{tenderResult.executive_summary || "No executive summary was returned."}</p>
-            <p>{tenderResult.executive_reasoning || "No executive reasoning was returned."}</p>
-          </section>
-
-          <section>
-            <span>Bid Direction</span>
-            <dl>
-              <div>
-                <dt>Decision</dt>
-                <dd>{tenderResult.bid_decision || "Review"}</dd>
-              </div>
-              <div>
-                <dt>Confidence</dt>
-                <dd>{formatConfidence(tenderResult.confidence)}</dd>
-              </div>
-              <div>
-                <dt>Commercial Risk</dt>
-                <dd>{tenderResult.commercial_risk || "Unknown"}</dd>
-              </div>
-              <div>
-                <dt>Technical Risk</dt>
-                <dd>{tenderResult.technical_risk || "Unknown"}</dd>
-              </div>
-            </dl>
-          </section>
-
-          <section>
-            <span>Primary Blockers</span>
-            <ol>
-              {(tenderResult.key_blockers || []).map((blocker) => (
-                <li key={blocker}>{blocker}</li>
-              ))}
-            </ol>
-          </section>
-
-          <section>
-            <span>Required Departments</span>
-            <ol>
-              {(tenderResult.required_departments || []).map((department) => (
-                <li key={department}>{department}</li>
-              ))}
-            </ol>
-          </section>
-
-          <section>
-            <span>Recommended Next Actions</span>
-            <ol>
-              {(tenderResult.recommended_next_actions || []).map((action) => (
-                <li key={action}>{action}</li>
-              ))}
-            </ol>
-          </section>
-        </div>
-      ) : reasoningResult ? (
-        <div className="brief-drawer-body">
-          <section>
-            <span>Executive Recommendation</span>
-            <p>{reasoningResult.executive_recommendation || "No recommendation was returned."}</p>
-            <p>{reasoningResult.executive_explanation || "No executive explanation was returned."}</p>
-          </section>
-
-          <section>
-            <span>Key Findings</span>
-            <ol>
-              {(reasoningResult.key_findings || []).map((finding) => (
-                <li key={finding}>{finding}</li>
-              ))}
-            </ol>
-          </section>
-
-          <section>
-            <span>Evidence</span>
-            <ol>
-              {(reasoningResult.evidence || []).map((item, index) => (
-                <li key={`${item.source || "evidence"}-${index}`}>
-                  <strong>{item.source || "Evidence"}</strong>
-                  <p>{item.summary || "No evidence summary was returned."}</p>
-                </li>
-              ))}
-            </ol>
-          </section>
-
-          <section>
-            <span>Technical Details</span>
-            <dl>
-              <div>
-                <dt>Domain</dt>
-                <dd>{reasoningResult.reasoning_domain || "Not returned"}</dd>
-              </div>
-              <div>
-                <dt>Confidence</dt>
-                <dd>{formatConfidence(reasoningResult.confidence)}</dd>
-              </div>
-              <div>
-                <dt>Executive Attention</dt>
-                <dd>{formatBoolean(reasoningResult.requires_executive_attention)}</dd>
-              </div>
-            </dl>
-          </section>
-        </div>
-      ) : result ? (
-        <div className="brief-drawer-body">
-          <section>
-            <span>Current Backend Report</span>
-            <p>{executiveResponse?.summary || "No executive summary was returned."}</p>
-            <p>{executiveResponse?.recommended_next_action || "No recommended next action was returned."}</p>
-          </section>
-
-          <section>
-            <span>Mission Evaluation</span>
-            <dl>
-              <div>
-                <dt>Confidence</dt>
-                <dd>{formatConfidence(evaluation?.confidence)}</dd>
-              </div>
-              <div>
-                <dt>Decision Ready</dt>
-                <dd>{formatBoolean(evaluation?.decision_ready)}</dd>
-              </div>
-              <div>
-                <dt>Approval Required</dt>
-                <dd>{formatBoolean(evaluation?.approval_required)}</dd>
-              </div>
-            </dl>
-          </section>
-
-          {approvalRequest && (
-            <section>
-              <span>Approval Detail</span>
-              <dl>
-                <div>
-                  <dt>Approval ID</dt>
-                  <dd>{approvalRequest.approval_id || "Not provided"}</dd>
+              {briefing.details.map((detail) => (
+                <div key={detail.label}>
+                  <dt>{detail.label}</dt>
+                  <dd>{detail.value}</dd>
                 </div>
-                <div>
-                  <dt>Reason</dt>
-                  <dd>{approvalRequest.reason || "No approval reason was returned."}</dd>
-                </div>
-                <div>
-                  <dt>Required Action</dt>
-                  <dd>{approvalRequest.required_action || "No required action was returned."}</dd>
-                </div>
-              </dl>
-            </section>
-          )}
+              ))}
+            </dl>
+          </section>
+        )}
 
+        {coordinatedDepartments.length > 0 && (
           <section>
-            <span>Timeline</span>
+            <span>Department Coordination</span>
             <ol>
-              {steps.map((step) => (
-                <li key={step}>{step}</li>
+              {coordinatedDepartments.map((department) => (
+                <li key={department.name}>{department.name} - {department.status}</li>
               ))}
             </ol>
           </section>
+        )}
 
+        <section>
+          <span>Mission Lifecycle</span>
+          <ol>
+            {flowSteps.map((step) => (
+              <li key={step.label}>{step.label}</li>
+            ))}
+          </ol>
+        </section>
+
+        {briefing.risks.length > 0 && (
           <section>
-            <span>Technical Details</span>
-            <dl>
-              <div>
-                <dt>Status</dt>
-                <dd>{result.mission_status || "Not returned"}</dd>
-              </div>
-              <div>
-                <dt>Engine</dt>
-                <dd>{result.engine || "Not returned"}</dd>
-              </div>
-            </dl>
+            <span>Strategic Risks</span>
+            <ol>
+              {briefing.risks.map((risk) => (
+                <li key={risk}>{risk}</li>
+              ))}
+            </ol>
           </section>
-        </div>
-      ) : (
-        <p className="brief-empty">No executive brief is available yet.</p>
-      )}
+        )}
+
+        {briefing.missingInformation.length > 0 && (
+          <section>
+            <span>Missing Information</span>
+            <ol>
+              {briefing.missingInformation.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ol>
+          </section>
+        )}
+      </div>
     </aside>
   );
 }
@@ -1644,22 +1549,30 @@ function capabilityEventCompletedLine(event: AthenaEvent) {
 
 function deriveMissionState(events: AthenaEvent[], hasExecutiveResponse: boolean): MissionState {
   if (hasExecutiveResponse || hasEvent(events, /MissionExecutionCompleted|ExecutiveReasoningCompleted|ContractExecutiveCompleted|ProcurementExecutiveCompleted|MeetingExecutiveCompleted|TenderExecutiveCompleted|SupplierExecutiveCompleted|DailyBriefingGenerated|BrainObjectiveExecutionCompleted/)) {
-    return hasExecutiveResponse ? "Mission Complete" : "Executive Recommendation Ready";
+    return hasExecutiveResponse ? "Mission Complete" : "Executive Recommendation";
   }
 
   if (hasEvent(events, /ExecutionEvaluationCompleted|MissionParallelExecutionCompleted|MissionDependencyLevelCompleted|OrganizationImpactAnalyzed/)) {
     return "Executive Consolidation";
   }
 
+  if (hasEvent(events, /Knowledge|ReasoningChain|OperationsOverview/)) {
+    return "Knowledge Expansion";
+  }
+
   if (hasEvent(events, /CapabilityExecution|TenderExecutiveStarted|SupplierExecutiveStarted|ContractExecutiveStarted|ProcurementExecutiveStarted|MeetingExecutiveStarted|ReasoningChainGenerated|Knowledge/)) {
-    return "Departments Working";
+    return "Departments Mobilized";
   }
 
   if (hasEvent(events, /MissionExecutionStarted|BrainObjectiveExecutionStarted|ExecutiveReasoningStarted|AdaptivePlanning/)) {
-    return "Assessment Running";
+    return "Executive Brain Activated";
   }
 
-  return "Mission Received";
+  if (events.length > 0) {
+    return "Mission Accepted";
+  }
+
+  return "Mission Created";
 }
 
 function hasEvent(events: AthenaEvent[], pattern: RegExp) {
@@ -1689,6 +1602,99 @@ function executiveDepartmentPresence(events: AthenaEvent[]) {
   return departments.slice(0, 7);
 }
 
+function buildDepartmentCoordination({
+  mission,
+  departmentPresence,
+  tenderResult,
+  supplierResult,
+  contractResult,
+  procurementResult,
+  meetingResult,
+  briefingResult,
+}: {
+  mission: string;
+  departmentPresence: DepartmentPresence[];
+  tenderResult: TenderExecutiveResponse | null;
+  supplierResult: SupplierExecutiveResponse | null;
+  contractResult: ContractExecutiveResponse | null;
+  procurementResult: ProcurementExecutiveResponse | null;
+  meetingResult: MeetingExecutiveResponse | null;
+  briefingResult: DailyBriefingExecutiveResponse | null;
+}) {
+  const departments = new Map<string, DepartmentPresence["status"]>();
+  const add = (name: string, status: DepartmentPresence["status"] = "Waiting") => {
+    const current = departments.get(name);
+    departments.set(name, current ? moreAdvancedDepartmentStatus(current, status) : status);
+  };
+
+  add("Executive Brain", "Working");
+  add("Reasoning Engine", "Waiting");
+
+  for (const department of expectedDepartmentsForMission({
+    mission,
+    tenderResult,
+    supplierResult,
+    contractResult,
+    procurementResult,
+    meetingResult,
+    briefingResult,
+  })) {
+    add(department);
+  }
+
+  for (const department of departmentPresence) {
+    add(department.name, department.status);
+  }
+
+  return Array.from(departments.entries())
+    .map(([name, status]) => ({ name, status }))
+    .slice(0, 9);
+}
+
+function expectedDepartmentsForMission({
+  mission,
+  tenderResult,
+  supplierResult,
+  contractResult,
+  procurementResult,
+  meetingResult,
+  briefingResult,
+}: {
+  mission: string;
+  tenderResult: TenderExecutiveResponse | null;
+  supplierResult: SupplierExecutiveResponse | null;
+  contractResult: ContractExecutiveResponse | null;
+  procurementResult: ProcurementExecutiveResponse | null;
+  meetingResult: MeetingExecutiveResponse | null;
+  briefingResult: DailyBriefingExecutiveResponse | null;
+}) {
+  const expected = new Set<string>(["Organization Model", "Operations Center"]);
+  const normalized = mission.toLowerCase();
+
+  if (/\b(tender|bid|proposal)\b/.test(normalized) || tenderResult) {
+    expected.add("Tender Executive");
+    expected.add("Procurement Executive");
+  }
+  if (/\b(supplier|vendor)\b/.test(normalized) || supplierResult) {
+    expected.add("Supplier Executive");
+  }
+  if (/\b(contract|agreement|terms)\b/.test(normalized) || contractResult) {
+    expected.add("Contract Executive");
+  }
+  if (/\b(procure|procurement|purchase|buy|source)\b/.test(normalized) || procurementResult) {
+    expected.add("Procurement Executive");
+    expected.add("Supplier Executive");
+  }
+  if (/\b(meeting|minutes|agenda)\b/.test(normalized) || meetingResult) {
+    expected.add("Meeting Executive");
+  }
+  if (/\b(daily|briefing|today|focus)\b/.test(normalized) || briefingResult) {
+    expected.add("Daily Briefing Executive");
+  }
+
+  return Array.from(expected);
+}
+
 function departmentsForEvent(event: AthenaEvent) {
   const eventType = String(event.event_type || "");
   const source = String(event.source || "");
@@ -1702,12 +1708,12 @@ function departmentsForEvent(event: AthenaEvent) {
   if (/ProcurementExecutive/.test(eventType)) departments.push({ name: "Procurement Executive", status });
   if (/MeetingExecutive/.test(eventType)) departments.push({ name: "Meeting Executive", status });
   if (/DailyBriefing/.test(eventType)) departments.push({ name: "Daily Briefing Executive", status });
-  if (/ExecutiveReasoning|BrainObjective|CapabilityExecution|ExecutiveExecution|ExecutionEvaluation/.test(eventType) || /executive_brain/.test(source)) departments.push({ name: "Reasoning Engine", status: /Completed|Evaluation|Learned/.test(eventType) ? "Consolidating" : status });
-  if (/OrganizationImpact/.test(eventType) || /organization/.test(source)) departments.push({ name: "Organization Model", status: "Reviewed" });
-  if (/Knowledge|ReasoningChain/.test(eventType) || /knowledge_graph|reasoning_graph/.test(source)) departments.push({ name: "Knowledge Graph", status: "Consulted" });
-  if (/OperationsOverview/.test(eventType) || /operations/.test(source)) departments.push({ name: "Operations Center", status: "Consulted" });
+  if (/ExecutiveReasoning|BrainObjective|CapabilityExecution|ExecutiveExecution|ExecutionEvaluation/.test(eventType) || /executive_brain/.test(source)) departments.push({ name: "Reasoning Engine", status: /Completed|Evaluation|Learned/.test(eventType) ? "Completed" : status });
+  if (/OrganizationImpact/.test(eventType) || /organization/.test(source)) departments.push({ name: "Organization Model", status: "Completed" });
+  if (/Knowledge|ReasoningChain/.test(eventType) || /knowledge_graph|reasoning_graph/.test(source)) departments.push({ name: /ReasoningChain|reasoning_graph/.test(`${eventType} ${source}`) ? "Reasoning Graph" : "Knowledge Graph", status: "Completed" });
+  if (/OperationsOverview/.test(eventType) || /operations/.test(source)) departments.push({ name: "Operations Center", status: "Completed" });
   if (/Mission/.test(eventType) || /mission_controller|mission_context/.test(source)) departments.push({ name: "Mission Runtime", status });
-  if (/approval/i.test(eventType) || /approval/.test(source)) departments.push({ name: "Approval Workflow", status: /Required/.test(eventType) ? "Reviewed" : status });
+  if (/approval/i.test(eventType) || /approval/.test(source)) departments.push({ name: "Approval Workflow", status: /Required/.test(eventType) ? "Working" : status });
   if (/supplier/i.test(capability)) departments.push({ name: "Supplier Executive", status });
   if (/risk|obligation|extraction|decision|action|file/i.test(capability)) departments.push({ name: "Executive Brain", status });
 
@@ -1719,25 +1725,16 @@ function departmentStatusForEvent(event: AthenaEvent): DepartmentPresence["statu
   const result = String(event.payload?.result || "");
 
   if (/Completed|Generated|Approved|Rejected/.test(eventType) || result === "success") {
-    return "Complete";
+    return "Completed";
   }
-  if (/Organization|Knowledge|ReasoningChain/.test(eventType)) {
-    return "Reviewed";
-  }
-  if (/Operations/.test(eventType)) {
-    return "Consulted";
-  }
-  if (/Evaluation|ParallelExecution|DependencyLevelCompleted/.test(eventType)) {
-    return "Consolidating";
-  }
-  return "Active";
+  return "Working";
 }
 
 function moreAdvancedDepartmentStatus(
   current: DepartmentPresence["status"],
   next: DepartmentPresence["status"],
 ) {
-  const order: DepartmentPresence["status"][] = ["Active", "Consulted", "Reviewed", "Consolidating", "Complete"];
+  const order: DepartmentPresence["status"][] = ["Waiting", "Working", "Completed"];
   return order.indexOf(next) > order.indexOf(current) ? next : current;
 }
 
@@ -1746,28 +1743,38 @@ function buildLiveMissionFlow(timelineSteps: string[], missionState: MissionStat
   const completeRank = hasExecutiveResponse ? missionStateRank("Mission Complete") : missionStateRank(missionState);
   const flow = [
     {
-      label: "Mission received",
-      rank: missionStateRank("Mission Received"),
+      label: "Mission created",
+      rank: missionStateRank("Mission Created"),
       matched: /objective received|mission execution|mission initiated|mission objective/i.test(joinedSteps),
     },
     {
-      label: "Departments engaged",
-      rank: missionStateRank("Departments Working"),
+      label: "Mission accepted",
+      rank: missionStateRank("Mission Accepted"),
+      matched: timelineSteps.length > 0,
+    },
+    {
+      label: "Executive Brain activated",
+      rank: missionStateRank("Executive Brain Activated"),
+      matched: /brain engaged|reasoning|scope|plan/i.test(joinedSteps),
+    },
+    {
+      label: "Departments mobilized",
+      rank: missionStateRank("Departments Mobilized"),
       matched: /department|executive engaged|capability|tender|supplier|contract|procurement|meeting|briefing/i.test(joinedSteps),
     },
     {
-      label: "Executive assessment running",
-      rank: missionStateRank("Assessment Running"),
-      matched: /assessment|brain engaged|reasoning|scope|plan/i.test(joinedSteps),
+      label: "Knowledge expansion",
+      rank: missionStateRank("Knowledge Expansion"),
+      matched: /knowledge|dependencies|operations|context/i.test(joinedSteps),
     },
     {
-      label: "Strategic impact reviewed",
+      label: "Executive consolidation",
       rank: missionStateRank("Executive Consolidation"),
       matched: /impact|operations|knowledge|dependencies|readiness|consolidated/i.test(joinedSteps),
     },
     {
-      label: "Recommendation prepared",
-      rank: missionStateRank("Executive Recommendation Ready"),
+      label: "Executive recommendation",
+      rank: missionStateRank("Executive Recommendation"),
       matched: /recommendation|briefing|action prepared|delivered/i.test(joinedSteps),
     },
     {
@@ -1785,12 +1792,14 @@ function buildLiveMissionFlow(timelineSteps: string[], missionState: MissionStat
 
 function missionStateRank(state: MissionState) {
   const ranks: Record<MissionState, number> = {
-    "Mission Received": 1,
-    "Assessment Running": 2,
-    "Departments Working": 3,
-    "Executive Consolidation": 4,
-    "Executive Recommendation Ready": 5,
-    "Mission Complete": 6,
+    "Mission Created": 1,
+    "Mission Accepted": 2,
+    "Executive Brain Activated": 3,
+    "Departments Mobilized": 4,
+    "Knowledge Expansion": 5,
+    "Executive Consolidation": 6,
+    "Executive Recommendation": 7,
+    "Mission Complete": 8,
   };
 
   return ranks[state];
@@ -1981,14 +1990,57 @@ function executiveWorkspaceDetails({
   });
   const requiredNextAction = firstExecutiveSentence(
     missionResult?.approval_request?.required_action ||
+    contractResult?.recommended_actions?.[0] ||
+    procurementResult?.recommended_actions?.[0] ||
+    tenderResult?.recommended_next_actions?.[0] ||
+    supplierResult?.recommended_actions?.[0] ||
     meetingResult?.questions_to_ask?.[0] ||
     meetingResult?.documents_to_prepare?.[0] ||
     briefingResult?.priorities?.[0] ||
     "",
   );
+  const confidence = executiveWorkspaceConfidence({
+    missionResult,
+    reasoningResult,
+    tenderResult,
+    supplierResult,
+    contractResult,
+    procurementResult,
+  });
+  const approvalRequired = executiveWorkspaceApprovalRequired({ missionResult, reasoningResult });
+  const missingInformation = executiveWorkspaceMissingInformation({ contractResult });
+  const risks = executiveWorkspaceRisks({
+    reasoningResult,
+    tenderResult,
+    supplierResult,
+    contractResult,
+    procurementResult,
+    meetingResult,
+    briefingResult,
+  });
+  const dependencies = executiveWorkspaceDependencies({
+    tenderResult,
+    procurementResult,
+    briefingResult,
+  });
 
   if (priority) {
     details.push({ label: "Priority", value: priority });
+  }
+  if (confidence) {
+    details.push({ label: "Confidence", value: confidence });
+  }
+  if (approvalRequired) {
+    details.push({ label: "Approval Required", value: approvalRequired });
+  }
+  if (missingInformation.length > 0) {
+    details.push({ label: "Missing Information", value: `${missingInformation.length} item${missingInformation.length === 1 ? "" : "s"}` });
+  }
+  if (risks.length > 0) {
+    details.push({ label: "Strategic Risks", value: `${risks.length} identified` });
+  }
+  if (dependencies) {
+    details.push({ label: "Dependencies", value: dependencies });
   }
   if (requiredNextAction) {
     details.push({ label: "Required Next Action", value: requiredNextAction });
@@ -1998,6 +2050,70 @@ function executiveWorkspaceDetails({
   }
 
   return details;
+}
+
+function executiveWorkspaceConfidence({
+  missionResult,
+  reasoningResult,
+  tenderResult,
+  supplierResult,
+  contractResult,
+  procurementResult,
+}: {
+  missionResult: ExecutiveMissionResponse | null;
+  reasoningResult: ExecutiveReasoningResponse | null;
+  tenderResult: TenderExecutiveResponse | null;
+  supplierResult: SupplierExecutiveResponse | null;
+  contractResult: ContractExecutiveResponse | null;
+  procurementResult: ProcurementExecutiveResponse | null;
+}) {
+  const confidence =
+    contractResult?.confidence ??
+    procurementResult?.confidence ??
+    supplierResult?.confidence ??
+    tenderResult?.confidence ??
+    reasoningResult?.confidence ??
+    missionResult?.mission_evaluation?.confidence;
+
+  return confidence !== undefined ? `${confidence}%` : "";
+}
+
+function executiveWorkspaceApprovalRequired({
+  missionResult,
+  reasoningResult,
+}: {
+  missionResult: ExecutiveMissionResponse | null;
+  reasoningResult: ExecutiveReasoningResponse | null;
+}) {
+  if (missionResult?.mission_evaluation?.approval_required !== undefined) {
+    return missionResult.mission_evaluation.approval_required ? "Yes" : "No";
+  }
+  if (missionResult?.approval_request) {
+    return "Yes";
+  }
+  if (reasoningResult?.requires_executive_attention !== undefined) {
+    return reasoningResult.requires_executive_attention ? "Yes" : "No";
+  }
+  return "";
+}
+
+function executiveWorkspaceDependencies({
+  tenderResult,
+  procurementResult,
+  briefingResult,
+}: {
+  tenderResult: TenderExecutiveResponse | null;
+  procurementResult: ProcurementExecutiveResponse | null;
+  briefingResult: DailyBriefingExecutiveResponse | null;
+}) {
+  const dependencies = uniqueExecutiveItems(
+    tenderResult?.required_departments,
+    procurementResult?.required_departments,
+    (briefingResult?.pending_approvals || []).map((item) => readableUnknownItem(item)),
+    (briefingResult?.active_missions || []).map((item) => readableUnknownItem(item)),
+  );
+
+  return dependencies.length > 0 ? dependencies.slice(0, 3).join(", ") : "";
 }
 
 function executiveWorkspacePriority({
@@ -2150,6 +2266,30 @@ function uniqueExecutiveItems(...groups: Array<string[] | undefined>) {
   return values;
 }
 
+function readableUnknownItem(item: unknown) {
+  if (!item) {
+    return "";
+  }
+
+  if (typeof item === "string") {
+    return item;
+  }
+
+  if (typeof item === "object") {
+    const record = item as Record<string, unknown>;
+    return cleanObjectiveText(
+      record.title ||
+      record.mission ||
+      record.objective ||
+      record.name ||
+      record.status ||
+      "",
+    );
+  }
+
+  return String(item);
+}
+
 function firstExecutiveSentence(value: unknown) {
   const cleanValue = cleanObjectiveText(value);
   if (!cleanValue) {
@@ -2298,22 +2438,6 @@ function extractSupplierName(input: string) {
   }
 
   return "";
-}
-
-function formatBoolean(value: boolean | undefined) {
-  if (value === undefined) {
-    return "Not returned";
-  }
-
-  return value ? "Yes" : "No";
-}
-
-function formatConfidence(value: number | undefined) {
-  if (value === undefined) {
-    return "Not returned";
-  }
-
-  return `${value}%`;
 }
 
 function getChamberOverlay(route: WorkspaceRoute, activePath: string) {
