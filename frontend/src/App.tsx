@@ -8,9 +8,11 @@ import { AthenaPresenceState } from "./components/athenaPresenceState";
 import {
   executeExecutiveReasoning,
   executeMission,
+  executeSupplierExecutive,
   executeTenderExecutive,
   type ExecutiveMissionResponse,
   type ExecutiveReasoningResponse,
+  type SupplierExecutiveResponse,
   type TenderExecutiveResponse,
 } from "./services/athenaApi";
 import {
@@ -23,6 +25,7 @@ import {
   createErrorConversation,
   createMissionConversation,
   createReasoningConversation,
+  createSupplierConversation,
   createTenderConversation,
   currentProtocolGreeting,
   protocolDelayForNextLine,
@@ -62,7 +65,7 @@ const missionSteps = [
   "Checking approvals",
 ];
 
-type ExecutionMode = "mission" | "reasoning" | "tender" | null;
+type ExecutionMode = "mission" | "reasoning" | "tender" | "supplier" | null;
 
 type MissionIntent = {
   hint: string;
@@ -112,6 +115,7 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
   const [missionResult, setMissionResult] = useState<ExecutiveMissionResponse | null>(null);
   const [reasoningResult, setReasoningResult] = useState<ExecutiveReasoningResponse | null>(null);
   const [tenderResult, setTenderResult] = useState<TenderExecutiveResponse | null>(null);
+  const [supplierResult, setSupplierResult] = useState<SupplierExecutiveResponse | null>(null);
   const [missionError, setMissionError] = useState("");
   const [protocolLines, setProtocolLines] = useState<ConversationProtocolLine[]>(() => buildMemorySpeech(workspaceMemory));
   const [visibleProtocolLines, setVisibleProtocolLines] = useState<ConversationProtocolLine[]>(() =>
@@ -155,12 +159,14 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
   }, [isExecuting, visibleSteps.length]);
 
   useEffect(() => {
-    if (!missionResult && !reasoningResult && !tenderResult && !missionError) {
+    if (!missionResult && !reasoningResult && !tenderResult && !supplierResult && !missionError) {
       return;
     }
 
     const conversation = missionError
       ? createErrorConversation(missionError)
+      : supplierResult
+        ? createSupplierConversation(supplierResult)
       : tenderResult
         ? createTenderConversation(tenderResult)
       : reasoningResult
@@ -185,7 +191,7 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
                 lastPresenceState: AthenaPresenceState.ERROR,
               }),
             );
-          } else if (reasoningResult || tenderResult) {
+          } else if (reasoningResult || tenderResult || supplierResult) {
             setPresenceState(AthenaPresenceState.SUCCESS);
             setWorkspaceMemory(
               updateWorkspaceMemory({
@@ -228,6 +234,7 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
     missionResult,
     protocolLines,
     reasoningResult,
+    supplierResult,
     tenderResult,
     setPresenceState,
     visibleProtocolLines.length,
@@ -261,6 +268,7 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
     setMissionResult(null);
     setReasoningResult(null);
     setTenderResult(null);
+    setSupplierResult(null);
     setMissionError("");
     setProtocolLines([]);
     setVisibleProtocolLines([]);
@@ -277,7 +285,22 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
     setIsExecuting(true);
 
     try {
-      if (looksLikeTenderBidQuestion(nextMission)) {
+      if (looksLikeSupplierContinueQuestion(nextMission)) {
+        const supplierName = extractSupplierName(nextMission);
+        setExecutionMode("supplier");
+        setVisibleSteps([]);
+        const result = await executeSupplierExecutive(nextMission, supplierName);
+        setSupplierResult(result);
+        setWorkspaceMemory(
+          updateWorkspaceMemory({
+            lastMission: nextMission,
+            lastRecommendation: result.supplier_decision ? `Supplier recommendation: ${result.supplier_decision}` : "",
+            lastApproval: result.key_concerns?.[0] || "",
+            lastGreeting: currentProtocolGreeting(),
+            lastPresenceState: AthenaPresenceState.SPEAKING,
+          }),
+        );
+      } else if (looksLikeTenderBidQuestion(nextMission)) {
         setExecutionMode("tender");
         setVisibleSteps([]);
         const result = await executeTenderExecutive(nextMission);
@@ -331,7 +354,8 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
       setPresenceState(AthenaPresenceState.SPEAKING);
       setIsSpeaking(true);
     } catch (error) {
-      const errorMessage = looksLikeExecutiveQuestion(nextMission) || looksLikeTenderBidQuestion(nextMission)
+      const errorMessage =
+        looksLikeExecutiveQuestion(nextMission) || looksLikeTenderBidQuestion(nextMission) || looksLikeSupplierContinueQuestion(nextMission)
         ? "I cannot reach the Executive Brain right now."
         : error instanceof Error
           ? error.message
@@ -347,13 +371,13 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
         }),
       );
       setPresenceState(
-        looksLikeExecutiveQuestion(nextMission) || looksLikeTenderBidQuestion(nextMission)
+        looksLikeExecutiveQuestion(nextMission) || looksLikeTenderBidQuestion(nextMission) || looksLikeSupplierContinueQuestion(nextMission)
           ? AthenaPresenceState.ERROR
           : AthenaPresenceState.SPEAKING,
       );
       setIsSpeaking(true);
     } finally {
-      if (looksLikeExecutiveQuestion(nextMission) || looksLikeTenderBidQuestion(nextMission)) {
+      if (looksLikeExecutiveQuestion(nextMission) || looksLikeTenderBidQuestion(nextMission) || looksLikeSupplierContinueQuestion(nextMission)) {
         setVisibleSteps([]);
       } else {
         setVisibleSteps(missionSteps);
@@ -369,6 +393,7 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
     setMissionResult(null);
     setReasoningResult(null);
     setTenderResult(null);
+    setSupplierResult(null);
     setMissionError("");
     setProtocolLines([]);
     setVisibleProtocolLines([]);
@@ -402,6 +427,7 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
     setMissionResult(null);
     setReasoningResult(null);
     setTenderResult(null);
+    setSupplierResult(null);
     setMissionError("");
     setProtocolLines([]);
     setVisibleProtocolLines([]);
@@ -489,9 +515,9 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
             {!isSpeaking && showProtocolOffer && visibleProtocolLines.length > 0 && (
               <div className="conversation-actions">
                 <button type="button" onClick={() => setBriefOpen(true)}>
-                  {tenderResult ? "View Executive Brief" : "YES"}
+                  {tenderResult ? "View Executive Brief" : supplierResult ? "View Supplier Evidence" : "YES"}
                 </button>
-                {!tenderResult && (
+                {!tenderResult && !supplierResult && (
                   <button type="button" onClick={returnToListening}>
                     NOT NOW
                   </button>
@@ -530,6 +556,7 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
         result={missionResult}
         reasoningResult={reasoningResult}
         tenderResult={tenderResult}
+        supplierResult={supplierResult}
         steps={visibleSteps}
         onClose={() => setBriefOpen(false)}
       />
@@ -564,6 +591,7 @@ function ExecutiveBriefDrawer({
   result,
   reasoningResult,
   tenderResult,
+  supplierResult,
   steps,
   onClose,
 }: {
@@ -571,6 +599,7 @@ function ExecutiveBriefDrawer({
   result: ExecutiveMissionResponse | null;
   reasoningResult: ExecutiveReasoningResponse | null;
   tenderResult: TenderExecutiveResponse | null;
+  supplierResult: SupplierExecutiveResponse | null;
   steps: string[];
   onClose: () => void;
 }) {
@@ -583,14 +612,75 @@ function ExecutiveBriefDrawer({
       <div className="brief-drawer-header">
         <div>
           <span>Executive Brief</span>
-          <h3>{tenderResult ? "Tender Executive Brief" : reasoningResult ? "Reasoning Evidence" : "Mission Detail"}</h3>
+          <h3>
+            {tenderResult
+              ? "Tender Executive Brief"
+              : supplierResult
+                ? "Supplier Evidence"
+                : reasoningResult
+                  ? "Reasoning Evidence"
+                  : "Mission Detail"}
+          </h3>
         </div>
         <button type="button" onClick={onClose} aria-label="Close executive brief">
           Close
         </button>
       </div>
 
-      {tenderResult ? (
+      {supplierResult ? (
+        <div className="brief-drawer-body">
+          <section>
+            <span>Executive Summary</span>
+            <p>{supplierResult.executive_summary || "No executive summary was returned."}</p>
+            <p>{supplierResult.executive_reasoning || "No executive reasoning was returned."}</p>
+          </section>
+
+          <section>
+            <span>Supplier Direction</span>
+            <dl>
+              <div>
+                <dt>Decision</dt>
+                <dd>{supplierResult.supplier_decision || "Review"}</dd>
+              </div>
+              <div>
+                <dt>Confidence</dt>
+                <dd>{formatConfidence(supplierResult.confidence)}</dd>
+              </div>
+              <div>
+                <dt>Risk Level</dt>
+                <dd>{supplierResult.risk_level || "Unknown"}</dd>
+              </div>
+            </dl>
+          </section>
+
+          <section>
+            <span>Key Strengths</span>
+            <ol>
+              {(supplierResult.key_strengths || []).map((strength) => (
+                <li key={strength}>{strength}</li>
+              ))}
+            </ol>
+          </section>
+
+          <section>
+            <span>Key Concerns</span>
+            <ol>
+              {(supplierResult.key_concerns || []).map((concern) => (
+                <li key={concern}>{concern}</li>
+              ))}
+            </ol>
+          </section>
+
+          <section>
+            <span>Recommended Actions</span>
+            <ol>
+              {(supplierResult.recommended_actions || []).map((action) => (
+                <li key={action}>{action}</li>
+              ))}
+            </ol>
+          </section>
+        </div>
+      ) : tenderResult ? (
         <div className="brief-drawer-body">
           <section>
             <span>Executive Summary</span>
@@ -953,6 +1043,34 @@ function looksLikeExecutiveQuestion(input: string) {
 function looksLikeTenderBidQuestion(input: string) {
   const normalized = input.trim().toLowerCase();
   return /^(should)\b/.test(normalized) && /\b(icc|we)\b/.test(normalized) && /\bbid\b/.test(normalized);
+}
+
+function looksLikeSupplierContinueQuestion(input: string) {
+  const normalized = input.trim().toLowerCase();
+  return (
+    /^should\b/.test(normalized) &&
+    /\b(we|icc)\b/.test(normalized) &&
+    /\bcontinue\b/.test(normalized) &&
+    /\b(supplier|working with|with)\b/.test(normalized)
+  );
+}
+
+function extractSupplierName(input: string) {
+  const cleanedWords = input
+    .trim()
+    .split(/\s+/)
+    .map((word) => word.replace(/[.,:;!?()[\]{}]/g, ""))
+    .filter(Boolean);
+  const ignored = new Set(["Should", "should", "We", "we", "ICC", "icc", "Continue", "continue", "Working", "working", "With", "with", "Supplier", "supplier"]);
+
+  for (let index = cleanedWords.length - 1; index >= 0; index -= 1) {
+    const word = cleanedWords[index];
+    if (!ignored.has(word)) {
+      return word;
+    }
+  }
+
+  return "";
 }
 
 function formatBoolean(value: boolean | undefined) {

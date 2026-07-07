@@ -62,6 +62,22 @@ export type TenderExecutiveResponse = {
   executive_brief?: Record<string, unknown>;
 };
 
+export type SupplierExecutiveResponse = {
+  engine?: string;
+  status?: string;
+  question?: string;
+  supplier?: string;
+  executive_summary?: string;
+  supplier_decision?: "Continue" | "Monitor" | "Replace" | "Review" | string;
+  confidence?: number;
+  risk_level?: string;
+  key_strengths?: string[];
+  key_concerns?: string[];
+  recommended_actions?: string[];
+  executive_reasoning?: string;
+  executive_brief?: Record<string, unknown>;
+};
+
 export async function askAthena(
   question: string
 ): Promise<AthenaResponse> {
@@ -146,6 +162,34 @@ export async function executeTenderExecutive(question: string): Promise<TenderEx
       body: JSON.stringify({
         question,
         path: DEFAULT_MISSION_PATH,
+      }),
+    });
+  } catch {
+    throw new Error("I cannot reach the Executive Brain right now.");
+  }
+
+  if (!response.ok) {
+    throw new Error("I cannot reach the Executive Brain right now.");
+  }
+
+  return await response.json();
+}
+
+export async function executeSupplierExecutive(
+  question: string,
+  supplier: string
+): Promise<SupplierExecutiveResponse> {
+  let response: Response;
+
+  try {
+    response = await fetch(`${API_URL}/athena/executive/supplier`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        question,
+        supplier,
       }),
     });
   } catch {

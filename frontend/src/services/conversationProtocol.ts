@@ -1,4 +1,9 @@
-import type { ExecutiveMissionResponse, ExecutiveReasoningResponse, TenderExecutiveResponse } from "./athenaApi";
+import type {
+  ExecutiveMissionResponse,
+  ExecutiveReasoningResponse,
+  SupplierExecutiveResponse,
+  TenderExecutiveResponse,
+} from "./athenaApi";
 
 export type ConversationProtocolLine = {
   stage: "recognition" | "context" | "decision" | "reason" | "offer";
@@ -87,6 +92,21 @@ export function createTenderConversation(result: TenderExecutiveResponse): Conve
   });
 }
 
+export function createSupplierConversation(result: SupplierExecutiveResponse): ConversationProtocolResult {
+  const decision = supplierDecisionLine(result.supplier_decision);
+  const reason = normalizeReason(
+    result.key_concerns?.[0] || result.key_strengths?.[0] || result.executive_reasoning || result.executive_summary || "",
+    "The supplier evidence requires further procurement review.",
+  );
+
+  return createConversation({
+    context: "I've completed my supplier assessment.",
+    decision,
+    reason,
+    offer: "Would you like me to review supplier evidence?",
+  });
+}
+
 export function createErrorConversation(message: string): ConversationProtocolResult {
   return createConversation({
     context: contextLines.error,
@@ -159,6 +179,20 @@ function tenderDecisionLine(decision: string | undefined) {
     return "My recommendation is DO NOT BID.";
   }
   return "My recommendation is REVIEW FURTHER.";
+}
+
+function supplierDecisionLine(decision: string | undefined) {
+  const normalized = String(decision || "").toLowerCase();
+  if (normalized === "continue") {
+    return "My recommendation is CONTINUE.";
+  }
+  if (normalized === "replace") {
+    return "My recommendation is REPLACE.";
+  }
+  if (normalized === "monitor") {
+    return "My recommendation is MONITOR.";
+  }
+  return "My recommendation is REVIEW.";
 }
 
 function normalizeReason(value: string, fallback: string) {
