@@ -9,6 +9,10 @@ export type WorkspaceMemory = {
   lastGreeting: string;
   lastInteractionTime: string;
   lastPresenceState: AthenaPresenceStateValue;
+  lastObjectiveText: string;
+  lastObjectiveTimestamp: string;
+  lastObjectiveResponseReceived: boolean;
+  lastObjectiveStatus: string;
 };
 
 const emptyMemory: WorkspaceMemory = {
@@ -18,6 +22,10 @@ const emptyMemory: WorkspaceMemory = {
   lastGreeting: "",
   lastInteractionTime: "",
   lastPresenceState: AthenaPresenceState.BOOTING,
+  lastObjectiveText: "",
+  lastObjectiveTimestamp: "",
+  lastObjectiveResponseReceived: false,
+  lastObjectiveStatus: "",
 };
 
 export function readWorkspaceMemory(): WorkspaceMemory | null {

@@ -121,10 +121,14 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
   const [workspaceMemory, setWorkspaceMemory] = useState<WorkspaceMemory | null>(() => readWorkspaceMemory());
   const [arrivalRestState] = useState(() => (workspaceMemory ? AthenaPresenceState.WAITING : AthenaPresenceState.IDLE));
   const [arrivalExecutiveLine] = useState(() => chooseArrivalExecutiveLine(workspaceMemory));
+  const hasCompletedObjectiveMemory = Boolean(
+    cleanObjectiveText(workspaceMemory?.lastObjectiveText || workspaceMemory?.lastMission || "") &&
+    (workspaceMemory?.lastObjectiveResponseReceived || workspaceMemory?.lastRecommendation),
+  );
   const [arrivalComplete, setArrivalComplete] = useState(false);
   const [arrivalLines, setArrivalLines] = useState<string[]>([]);
   const [mission, setMission] = useState("");
-  const [submittedMission, setSubmittedMission] = useState(() => workspaceMemory?.lastMission ?? "");
+  const [submittedMission, setSubmittedMission] = useState("");
   const [isExecuting, setIsExecuting] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [executionMode, setExecutionMode] = useState<ExecutionMode>(null);
@@ -149,13 +153,11 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
   const [visibleSteps, setVisibleSteps] = useState<string[]>([]);
   const missionIntent = detectMissionIntent(mission);
   const hasDraftMission = mission.trim().length > 0;
-  const continuityGreeting = workspaceMemory?.lastMission ? buildContinuityGreeting(workspaceMemory) : "";
-  const greetingMessage = missionIntent.hint ? missionIntent.greeting : continuityGreeting || missionIntent.greeting;
+  const greetingMessage = missionIntent.hint ? missionIntent.greeting : missionIntent.greeting;
   const chamberLines = buildChamberLines({
     arrivalComplete,
     arrivalLines,
     missionIntent,
-    workspaceMemory,
     submittedMission,
     visibleProtocolLines,
     isExecuting,
@@ -349,6 +351,10 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
     setWorkspaceMemory(
       updateWorkspaceMemory({
         lastMission: nextMission,
+        lastObjectiveText: nextMission,
+        lastObjectiveTimestamp: new Date().toISOString(),
+        lastObjectiveResponseReceived: false,
+        lastObjectiveStatus: "assessment in progress",
         lastPresenceState: AthenaPresenceState.THINKING,
       }),
     );
@@ -363,6 +369,7 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
         setWorkspaceMemory(
           updateWorkspaceMemory({
             lastMission: nextMission,
+            ...completedObjectiveMemory(nextMission),
             lastRecommendation: result.contract_decision ? `Contract recommendation: ${result.contract_decision}` : "",
             lastApproval: result.key_risks?.[0] || result.missing_information?.[0] || "",
             lastGreeting: currentProtocolGreeting(),
@@ -378,6 +385,7 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
         setWorkspaceMemory(
           updateWorkspaceMemory({
             lastMission: nextMission,
+            ...completedObjectiveMemory(nextMission),
             lastRecommendation: result.procurement_decision ? `Procurement recommendation: ${result.procurement_decision}` : "",
             lastApproval: result.recommended_actions?.[0] || "",
             lastGreeting: currentProtocolGreeting(),
@@ -392,6 +400,7 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
         setWorkspaceMemory(
           updateWorkspaceMemory({
             lastMission: nextMission,
+            ...completedObjectiveMemory(nextMission),
             lastRecommendation: result.recommended_position || result.meeting_objective || "",
             lastApproval: result.risks_to_raise?.[0] || "",
             lastGreeting: currentProtocolGreeting(),
@@ -406,6 +415,7 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
         setWorkspaceMemory(
           updateWorkspaceMemory({
             lastMission: nextMission,
+            ...completedObjectiveMemory(nextMission),
             lastRecommendation: result.recommended_focus || result.priorities?.[0] || "",
             lastApproval: result.risks?.[0] || "",
             lastGreeting: currentProtocolGreeting(),
@@ -420,6 +430,7 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
         setWorkspaceMemory(
           updateWorkspaceMemory({
             lastMission: nextMission,
+            ...completedObjectiveMemory(nextMission),
             lastRecommendation: result.bid_decision ? `Tender recommendation: ${result.bid_decision}` : "",
             lastApproval: result.key_blockers?.[0] || "",
             lastGreeting: currentProtocolGreeting(),
@@ -435,6 +446,7 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
         setWorkspaceMemory(
           updateWorkspaceMemory({
             lastMission: nextMission,
+            ...completedObjectiveMemory(nextMission),
             lastRecommendation: result.supplier_decision ? `Supplier recommendation: ${result.supplier_decision}` : "",
             lastApproval: result.key_concerns?.[0] || "",
             lastGreeting: currentProtocolGreeting(),
@@ -449,6 +461,7 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
         setWorkspaceMemory(
           updateWorkspaceMemory({
             lastMission: nextMission,
+            ...completedObjectiveMemory(nextMission),
             lastRecommendation: result.executive_recommendation || result.recommended_next_action || "",
             lastApproval: result.requires_executive_attention ? "This requires executive attention." : "",
             lastGreeting: currentProtocolGreeting(),
@@ -463,6 +476,7 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
         setWorkspaceMemory(
           updateWorkspaceMemory({
             lastMission: nextMission,
+            ...completedObjectiveMemory(nextMission),
             lastRecommendation: result.executive_recommendation || result.recommended_next_action || "",
             lastApproval: result.requires_executive_attention ? "This requires executive attention." : "",
             lastGreeting: currentProtocolGreeting(),
@@ -483,6 +497,10 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
       setWorkspaceMemory(
         updateWorkspaceMemory({
           lastMission: nextMission,
+          lastObjectiveText: nextMission,
+          lastObjectiveTimestamp: new Date().toISOString(),
+          lastObjectiveResponseReceived: false,
+          lastObjectiveStatus: "assessment paused",
           lastRecommendation: "",
           lastApproval: "",
           lastGreeting: currentProtocolGreeting(),
@@ -524,17 +542,18 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
   };
 
   const resumeLastMission = () => {
-    if (!workspaceMemory?.lastMission) {
+    const lastObjective = cleanObjectiveText(workspaceMemory?.lastObjectiveText || workspaceMemory?.lastMission || "");
+    if (!lastObjective) {
       return;
     }
 
-    setMission("");
-    setSubmittedMission(workspaceMemory.lastMission);
-    setProtocolLines(buildMemorySpeech(workspaceMemory));
-    setVisibleProtocolLines(buildMemorySpeech(workspaceMemory));
+    setMission(lastObjective);
+    setSubmittedMission("");
+    setProtocolLines([]);
+    setVisibleProtocolLines([]);
     setShowProtocolOffer(false);
     setBriefOpen(false);
-    setPresenceState(AthenaPresenceState.WAITING);
+    setPresenceState(AthenaPresenceState.LISTENING);
   };
 
   const startNewMission = () => {
@@ -619,9 +638,9 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
           />
           {missionIntent.hint && <p className="mission-hint">Possible mission: {missionIntent.hint}</p>}
           <div className="chamber-actions">
-            {workspaceMemory?.lastMission && !mission.trim() && (
+            {hasCompletedObjectiveMemory && !mission.trim() && (
               <button type="button" onClick={resumeLastMission}>
-                Continue Previous Mission
+                Continue from last objective
               </button>
             )}
             <button type="button" onClick={startNewMission}>
@@ -987,7 +1006,6 @@ function buildChamberLines({
   arrivalComplete,
   arrivalLines,
   missionIntent,
-  workspaceMemory,
   submittedMission,
   visibleProtocolLines,
   isExecuting,
@@ -997,7 +1015,6 @@ function buildChamberLines({
   arrivalComplete: boolean;
   arrivalLines: string[];
   missionIntent: MissionIntent;
-  workspaceMemory: WorkspaceMemory | null;
   submittedMission: string;
   visibleProtocolLines: ConversationProtocolLine[];
   isExecuting: boolean;
@@ -1024,23 +1041,7 @@ function buildChamberLines({
     return [greetingMessage];
   }
 
-  if (workspaceMemory?.lastMission) {
-    const lines = [
-      currentProtocolGreeting(),
-      buildContinuityGreeting(workspaceMemory),
-      workspaceMemory.lastRecommendation ? "My recommendation remains unchanged." : "I am holding the previous mission context.",
-    ];
-
-    if (workspaceMemory.lastApproval) {
-      lines.push(workspaceMemory.lastApproval);
-    } else if (workspaceMemory.lastRecommendation) {
-      lines.push(workspaceMemory.lastRecommendation);
-    }
-
-    return lines.slice(0, 4);
-  }
-
-  return [buildCurrentGreeting(), "How may I assist the company today?"];
+  return [];
 }
 
 function buildMemorySpeech(memory: WorkspaceMemory | null): ConversationProtocolLine[] {
@@ -1064,15 +1065,6 @@ function buildMemorySpeech(memory: WorkspaceMemory | null): ConversationProtocol
   return lines;
 }
 
-function buildContinuityGreeting(memory: WorkspaceMemory) {
-  const sessionReference = getSessionReference(memory.lastInteractionTime);
-  const missionReference = summarizeMission(memory.lastMission);
-
-  return `${sessionReference} we completed ${missionReference}. Would you like to continue where we left off?`;
-}
-
-const buildCurrentGreeting = currentProtocolGreeting;
-
 function arrivalGreeting() {
   const hour = new Date().getHours();
 
@@ -1092,71 +1084,30 @@ function chooseArrivalExecutiveLine(memory: WorkspaceMemory | null) {
     return "The organization is operating normally.";
   }
 
-  const hasPendingDecision =
-    memory.lastPresenceState === AthenaPresenceState.APPROVAL ||
-    memory.lastPresenceState === AthenaPresenceState.THINKING ||
-    memory.lastPresenceState === AthenaPresenceState.UNDERSTANDING;
+  const hasPreviousObjective = Boolean(cleanObjectiveText(memory.lastObjectiveText || memory.lastMission));
 
-  if (hasPendingDecision) {
-    return "You have executive missions awaiting your decision.";
+  if (hasPreviousObjective && (memory.lastObjectiveResponseReceived || memory.lastRecommendation)) {
+    return "Your last executive assessment was completed.";
   }
 
-  if (memory.lastMission || memory.lastRecommendation || memory.lastInteractionTime) {
-    return "Your latest executive assessment has been completed.";
+  if (hasPreviousObjective) {
+    return "We paused with an executive objective still in progress.";
   }
 
   return "The organization is operating normally.";
 }
 
-function getSessionReference(timestamp: string) {
-  if (!timestamp) {
-    return "In our previous session";
-  }
-
-  const interactionDate = new Date(timestamp);
-  const today = new Date();
-  const yesterday = new Date(today);
-  yesterday.setDate(today.getDate() - 1);
-
-  if (isSameLocalDay(interactionDate, yesterday)) {
-    return "Yesterday";
-  }
-
-  if (isSameLocalDay(interactionDate, today)) {
-    return "Earlier today";
-  }
-
-  return "In our previous session";
+function completedObjectiveMemory(objective: string): Partial<WorkspaceMemory> {
+  return {
+    lastObjectiveText: objective,
+    lastObjectiveTimestamp: new Date().toISOString(),
+    lastObjectiveResponseReceived: true,
+    lastObjectiveStatus: "assessment completed",
+  };
 }
 
-function isSameLocalDay(leftDate: Date, rightDate: Date) {
-  return (
-    leftDate.getFullYear() === rightDate.getFullYear() &&
-    leftDate.getMonth() === rightDate.getMonth() &&
-    leftDate.getDate() === rightDate.getDate()
-  );
-}
-
-function summarizeMission(mission: string) {
-  const normalizedMission = mission.toLowerCase();
-
-  if (normalizedMission.includes("ministry of interior") || normalizedMission.includes("moi")) {
-    return "the Ministry of Interior assessment";
-  }
-
-  if (normalizedMission.includes("tender")) {
-    return "the tender assessment";
-  }
-
-  if (normalizedMission.includes("supplier")) {
-    return "the supplier review";
-  }
-
-  if (normalizedMission.includes("contract")) {
-    return "the contract review";
-  }
-
-  return "the last executive mission";
+function cleanObjectiveText(value: string) {
+  return String(value || "").replace(/\s+/g, " ").trim();
 }
 
 function detectMissionIntent(mission: string): MissionIntent {
