@@ -155,6 +155,17 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
   const missionIntent = detectMissionIntent(mission);
   const hasDraftMission = mission.trim().length > 0;
   const greetingMessage = missionIntent.hint ? missionIntent.greeting : missionIntent.greeting;
+  const hasExecutiveResponse = Boolean(
+    missionResult ||
+    reasoningResult ||
+    tenderResult ||
+    supplierResult ||
+    contractResult ||
+    procurementResult ||
+    meetingResult ||
+    briefingResult,
+  );
+  const showExecutiveWorkspace = Boolean(submittedMission && !isSpeaking && showProtocolOffer && hasExecutiveResponse && !missionError);
   const chamberLines = buildChamberLines({
     arrivalComplete,
     arrivalLines,
@@ -675,6 +686,19 @@ function Chamber({ route, activePath }: { route: WorkspaceRoute; activePath: str
           </section>
         )}
 
+        <ExecutiveWorkspacePanel
+          visible={showExecutiveWorkspace}
+          mission={submittedMission}
+          missionResult={missionResult}
+          reasoningResult={reasoningResult}
+          tenderResult={tenderResult}
+          supplierResult={supplierResult}
+          contractResult={contractResult}
+          procurementResult={procurementResult}
+          meetingResult={meetingResult}
+          briefingResult={briefingResult}
+        />
+
         <section
           className={isExecuting ? "command-timeline visible" : "command-timeline"}
           aria-live="polite"
@@ -730,6 +754,142 @@ function ChamberOverlay({ route, activePath }: { route: WorkspaceRoute; activePa
       </div>
     </aside>
   );
+}
+
+function ExecutiveWorkspacePanel({
+  visible,
+  mission,
+  missionResult,
+  reasoningResult,
+  tenderResult,
+  supplierResult,
+  contractResult,
+  procurementResult,
+  meetingResult,
+  briefingResult,
+}: {
+  visible: boolean;
+  mission: string;
+  missionResult: ExecutiveMissionResponse | null;
+  reasoningResult: ExecutiveReasoningResponse | null;
+  tenderResult: TenderExecutiveResponse | null;
+  supplierResult: SupplierExecutiveResponse | null;
+  contractResult: ContractExecutiveResponse | null;
+  procurementResult: ProcurementExecutiveResponse | null;
+  meetingResult: MeetingExecutiveResponse | null;
+  briefingResult: DailyBriefingExecutiveResponse | null;
+}) {
+  if (!visible) {
+    return null;
+  }
+
+  const briefing = buildExecutiveWorkspaceBrief({
+    mission,
+    missionResult,
+    reasoningResult,
+    tenderResult,
+    supplierResult,
+    contractResult,
+    procurementResult,
+    meetingResult,
+    briefingResult,
+  });
+
+  return (
+    <section className="executive-workspace-panel" aria-label="Executive workspace">
+      <div className="executive-workspace-section assessment">
+        <span>Executive Assessment</span>
+        <p>{briefing.assessment}</p>
+      </div>
+
+      <div className="executive-workspace-section action">
+        <span>Next Executive Action</span>
+        <p>{briefing.recommendation}</p>
+      </div>
+
+      <div className="executive-workspace-section mission">
+        <span>Mission</span>
+        <h2>{briefing.title}</h2>
+        <dl>
+          <div>
+            <dt>Type</dt>
+            <dd>{briefing.type}</dd>
+          </div>
+          <div>
+            <dt>Status</dt>
+            <dd>{briefing.status}</dd>
+          </div>
+        </dl>
+      </div>
+
+      <div className="executive-workspace-section timeline">
+        <span>Mission Timeline</span>
+        <ol>
+          <li>Mission Initiated</li>
+          <li>Executive Assessment</li>
+          <li>Recommendation Delivered</li>
+        </ol>
+      </div>
+    </section>
+  );
+}
+
+function buildExecutiveWorkspaceBrief({
+  mission,
+  missionResult,
+  reasoningResult,
+  tenderResult,
+  supplierResult,
+  contractResult,
+  procurementResult,
+  meetingResult,
+  briefingResult,
+}: {
+  mission: string;
+  missionResult: ExecutiveMissionResponse | null;
+  reasoningResult: ExecutiveReasoningResponse | null;
+  tenderResult: TenderExecutiveResponse | null;
+  supplierResult: SupplierExecutiveResponse | null;
+  contractResult: ContractExecutiveResponse | null;
+  procurementResult: ProcurementExecutiveResponse | null;
+  meetingResult: MeetingExecutiveResponse | null;
+  briefingResult: DailyBriefingExecutiveResponse | null;
+}) {
+  return {
+    title: conciseMissionTitle(mission),
+    type: executiveWorkspaceType({
+      mission,
+      missionResult,
+      reasoningResult,
+      tenderResult,
+      supplierResult,
+      contractResult,
+      procurementResult,
+      meetingResult,
+      briefingResult,
+    }),
+    status: "Assessment Complete",
+    assessment: executiveWorkspaceAssessment({
+      missionResult,
+      reasoningResult,
+      tenderResult,
+      supplierResult,
+      contractResult,
+      procurementResult,
+      meetingResult,
+      briefingResult,
+    }),
+    recommendation: executiveWorkspaceRecommendation({
+      missionResult,
+      reasoningResult,
+      tenderResult,
+      supplierResult,
+      contractResult,
+      procurementResult,
+      meetingResult,
+      briefingResult,
+    }),
+  };
 }
 
 function ExecutiveBriefDrawer({
@@ -1157,6 +1317,151 @@ function buildOrchestrationSteps(objective: string) {
     defaultOrchestrationSteps[5],
     defaultOrchestrationSteps[6],
   ];
+}
+
+function conciseMissionTitle(mission: string) {
+  const cleanMission = cleanObjectiveText(mission);
+  if (!cleanMission) {
+    return "Executive Objective";
+  }
+
+  return cleanMission.length > 72 ? `${cleanMission.slice(0, 69).trim()}...` : cleanMission;
+}
+
+function executiveWorkspaceType({
+  mission,
+  tenderResult,
+  supplierResult,
+  contractResult,
+  procurementResult,
+  meetingResult,
+  briefingResult,
+}: {
+  mission: string;
+  missionResult: ExecutiveMissionResponse | null;
+  reasoningResult: ExecutiveReasoningResponse | null;
+  tenderResult: TenderExecutiveResponse | null;
+  supplierResult: SupplierExecutiveResponse | null;
+  contractResult: ContractExecutiveResponse | null;
+  procurementResult: ProcurementExecutiveResponse | null;
+  meetingResult: MeetingExecutiveResponse | null;
+  briefingResult: DailyBriefingExecutiveResponse | null;
+}) {
+  if (tenderResult) {
+    return "Tender Executive";
+  }
+  if (supplierResult) {
+    return "Supplier Executive";
+  }
+  if (contractResult) {
+    return "Contract Executive";
+  }
+  if (procurementResult) {
+    return "Procurement Executive";
+  }
+  if (meetingResult) {
+    return "Meeting Executive";
+  }
+  if (briefingResult) {
+    return "Daily Briefing";
+  }
+
+  const normalized = mission.toLowerCase();
+  if (/\b(tender|bid|proposal)\b/.test(normalized)) {
+    return "Tender Executive";
+  }
+  if (/\b(supplier|vendor)\b/.test(normalized)) {
+    return "Supplier Executive";
+  }
+  if (/\b(contract|agreement)\b/.test(normalized)) {
+    return "Contract Executive";
+  }
+  if (/\b(procure|procurement|purchase|buy|source)\b/.test(normalized)) {
+    return "Procurement Executive";
+  }
+  if (/\b(meeting|minutes|agenda)\b/.test(normalized)) {
+    return "Meeting Executive";
+  }
+  if (/\b(daily|briefing|today|focus)\b/.test(normalized)) {
+    return "Daily Briefing";
+  }
+  return "Executive Reasoning";
+}
+
+function executiveWorkspaceAssessment({
+  missionResult,
+  reasoningResult,
+  tenderResult,
+  supplierResult,
+  contractResult,
+  procurementResult,
+  meetingResult,
+  briefingResult,
+}: {
+  missionResult: ExecutiveMissionResponse | null;
+  reasoningResult: ExecutiveReasoningResponse | null;
+  tenderResult: TenderExecutiveResponse | null;
+  supplierResult: SupplierExecutiveResponse | null;
+  contractResult: ContractExecutiveResponse | null;
+  procurementResult: ProcurementExecutiveResponse | null;
+  meetingResult: MeetingExecutiveResponse | null;
+  briefingResult: DailyBriefingExecutiveResponse | null;
+}) {
+  return firstExecutiveSentence(
+    contractResult?.executive_summary ||
+    procurementResult?.executive_summary ||
+    meetingResult?.executive_summary ||
+    briefingResult?.executive_summary ||
+    supplierResult?.executive_summary ||
+    tenderResult?.executive_summary ||
+    reasoningResult?.executive_explanation ||
+    reasoningResult?.executive_recommendation ||
+    missionResult?.executive_response?.summary ||
+    "ATHENA completed the executive assessment.",
+  );
+}
+
+function executiveWorkspaceRecommendation({
+  missionResult,
+  reasoningResult,
+  tenderResult,
+  supplierResult,
+  contractResult,
+  procurementResult,
+  meetingResult,
+  briefingResult,
+}: {
+  missionResult: ExecutiveMissionResponse | null;
+  reasoningResult: ExecutiveReasoningResponse | null;
+  tenderResult: TenderExecutiveResponse | null;
+  supplierResult: SupplierExecutiveResponse | null;
+  contractResult: ContractExecutiveResponse | null;
+  procurementResult: ProcurementExecutiveResponse | null;
+  meetingResult: MeetingExecutiveResponse | null;
+  briefingResult: DailyBriefingExecutiveResponse | null;
+}) {
+  return firstExecutiveSentence(
+    contractResult?.recommended_actions?.[0] ||
+    procurementResult?.recommended_actions?.[0] ||
+    meetingResult?.recommended_position ||
+    briefingResult?.recommended_focus ||
+    supplierResult?.recommended_actions?.[0] ||
+    tenderResult?.recommended_next_actions?.[0] ||
+    reasoningResult?.recommended_next_action ||
+    reasoningResult?.executive_recommendation ||
+    missionResult?.executive_response?.recommended_next_action ||
+    "Proceed with executive review of the recommendation.",
+  );
+}
+
+function firstExecutiveSentence(value: string) {
+  const cleanValue = cleanObjectiveText(value);
+  if (!cleanValue) {
+    return "";
+  }
+
+  const match = cleanValue.match(/.*?[.!?](\s|$)/);
+  return (match ? match[0] : cleanValue).trim();
 }
 
 function detectMissionIntent(mission: string): MissionIntent {

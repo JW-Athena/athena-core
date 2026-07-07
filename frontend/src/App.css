@@ -746,7 +746,16 @@ button {
 }
 
 .executive-home.arrival-ready .athena-identity {
-  animation: chamber-soft-reveal 900ms ease both;
+  opacity: 1;
+  transform: translateY(-78px);
+}
+
+.executive-home.arrival-ready .athena-identity span {
+  animation: chamber-title-wake 1800ms ease both;
+}
+
+.executive-home.arrival-ready .athena-identity p {
+  animation: chamber-title-wake 1800ms ease 360ms both;
 }
 
 .athena-environment {
@@ -910,7 +919,7 @@ button {
 }
 
 .athena-identity p {
-  margin: 8px 0 0;
+  margin: 12px 0 0;
   color: rgba(214, 179, 106, 0.54);
   font-size: 12px;
   letter-spacing: 0.24em;
@@ -1697,6 +1706,141 @@ button {
   background: rgba(214, 179, 106, 0.06);
 }
 
+.executive-workspace-panel {
+  position: relative;
+  z-index: 1;
+  width: min(840px, 92%);
+  display: grid;
+  gap: 0;
+  margin-top: 34px;
+  border-top: 1px solid rgba(214, 179, 106, 0.14);
+  background:
+    linear-gradient(180deg, rgba(214, 179, 106, 0.035), transparent 18%),
+    linear-gradient(180deg, rgba(8, 8, 8, 0.26), rgba(5, 5, 5, 0));
+  padding: 42px 0 36px;
+  opacity: 0;
+  transform: translateY(16px);
+  filter: blur(5px);
+  animation: executive-workspace-arrive 1200ms ease 500ms both;
+}
+
+.executive-workspace-section {
+  display: grid;
+  gap: 14px;
+  padding: 0 clamp(18px, 5vw, 64px);
+}
+
+.executive-workspace-section + .executive-workspace-section {
+  margin-top: 34px;
+  border-top: 1px solid rgba(214, 179, 106, 0.095);
+  padding-top: 34px;
+}
+
+.executive-workspace-section > span {
+  color: rgba(214, 179, 106, 0.72);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.executive-workspace-section h2 {
+  max-width: 620px;
+  margin: 0;
+  color: rgba(255, 250, 240, 0.78);
+  font-size: clamp(17px, 1.55vw, 24px);
+  font-weight: 500;
+  line-height: 1.28;
+}
+
+.executive-workspace-section p {
+  max-width: 680px;
+  margin: 0;
+  color: rgba(255, 250, 240, 0.82);
+  font-size: clamp(15px, 1.2vw, 18px);
+  line-height: 1.62;
+}
+
+.executive-workspace-section.assessment p {
+  max-width: 760px;
+  color: rgba(255, 250, 240, 0.94);
+  font-size: clamp(30px, 4.4vw, 56px);
+  font-weight: 500;
+  line-height: 1.08;
+}
+
+.executive-workspace-section.action {
+  margin-top: 42px;
+  padding-top: 42px;
+}
+
+.executive-workspace-section.action p {
+  max-width: 730px;
+  color: rgba(244, 223, 170, 0.92);
+  font-size: clamp(24px, 3vw, 40px);
+  font-weight: 500;
+  line-height: 1.16;
+}
+
+.executive-workspace-section dl {
+  display: flex;
+  gap: 42px;
+  flex-wrap: wrap;
+  margin: 6px 0 0;
+}
+
+.executive-workspace-section dt {
+  color: rgba(232, 220, 196, 0.36);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.executive-workspace-section dd {
+  margin: 5px 0 0;
+  color: rgba(244, 223, 170, 0.68);
+  font-size: 13px;
+}
+
+.executive-workspace-section.timeline ol {
+  position: relative;
+  display: grid;
+  gap: 18px;
+  margin: 0;
+  padding: 4px 0 2px 18px;
+  list-style: none;
+}
+
+.executive-workspace-section.timeline ol::before {
+  content: "";
+  position: absolute;
+  top: 12px;
+  bottom: 12px;
+  left: 3px;
+  width: 1px;
+  background: rgba(214, 179, 106, 0.32);
+}
+
+.executive-workspace-section.timeline li {
+  position: relative;
+  color: rgba(232, 220, 196, 0.64);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.executive-workspace-section.timeline li::before {
+  content: "";
+  position: absolute;
+  top: 0.58em;
+  left: -18px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: rgba(214, 179, 106, 0.82);
+  box-shadow: 0 0 18px rgba(214, 179, 106, 0.18);
+}
+
 @keyframes protocol-offer-arrive {
   from {
     opacity: 0;
@@ -1705,6 +1849,20 @@ button {
 
   to {
     opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes executive-workspace-arrive {
+  0% {
+    opacity: 0;
+    filter: blur(5px);
+    transform: translateY(16px);
+  }
+
+  100% {
+    opacity: 1;
+    filter: blur(0);
     transform: translateY(0);
   }
 }
@@ -1748,6 +1906,16 @@ button {
   100% {
     filter: brightness(1);
     transform: scale(1);
+  }
+}
+
+@keyframes chamber-title-wake {
+  0% {
+    opacity: 0;
+  }
+
+  100% {
+    opacity: 1;
   }
 }
 
